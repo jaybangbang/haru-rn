@@ -4,6 +4,7 @@ import { DiaryEntry, WeeklySummary } from './types';
 const BASE = documentDirectory!;
 const ENTRIES_FILE = `${BASE}haru_entries.json`;
 const WEEKLY_DIR = `${BASE}haru_weekly/`;
+const LAST_READ_FILE = `${BASE}haru_last_read.json`;
 
 async function readJson<T>(path: string): Promise<T | null> {
   try {
@@ -48,6 +49,19 @@ export async function loadWeeklySummary(weekKey: string): Promise<WeeklySummary 
 export async function saveWeeklySummary(summary: WeeklySummary): Promise<void> {
   await makeDirectoryAsync(WEEKLY_DIR, { intermediates: true }).catch(() => {});
   await writeJson(`${WEEKLY_DIR}${summary.weekKey}.json`, summary);
+}
+
+export async function getLastReadAt(): Promise<number> {
+  try {
+    const info = await getInfoAsync(LAST_READ_FILE);
+    if (!info.exists) return 0;
+    const raw = await readAsStringAsync(LAST_READ_FILE);
+    return (JSON.parse(raw) as { ts: number }).ts ?? 0;
+  } catch { return 0; }
+}
+
+export async function setLastReadAt(ts: number): Promise<void> {
+  await writeAsStringAsync(LAST_READ_FILE, JSON.stringify({ ts }));
 }
 
 export function generateId(): string {

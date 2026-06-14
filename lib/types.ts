@@ -19,6 +19,7 @@ export interface PendingComment {
   persona: PersonaKey;
   scheduledAt: number;
   order: number; // 1, 2, 3
+  notifId?: string; // expo-notifications scheduled notification ID
 }
 
 export interface DiaryEntry {

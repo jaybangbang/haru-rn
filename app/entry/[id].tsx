@@ -8,6 +8,7 @@ import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, saveEntry, deleteEntry } from '@/lib/storage';
 import { generateSingleComment } from '@/lib/ai';
+import { cancelNotification, notifyCommentReady } from '@/lib/notifications';
 import EmotionPill from '@/components/EmotionPill';
 import {
   ChevronLeftIcon, SparkleIcon, MagnifyIcon, BoltIcon,
@@ -93,6 +94,9 @@ export default function EntryDetailScreen() {
     for (const p of due) {
       try {
         const comment = await generateSingleComment(current, p.persona, current.comments);
+        // Cancel pre-scheduled notification and send immediate one with actual text
+        if (p.notifId) await cancelNotification(p.notifId);
+        await notifyCommentReady(current.id, p.persona, comment.text);
         current = {
           ...current,
           comments: [...current.comments, comment],

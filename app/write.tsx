@@ -9,6 +9,7 @@ import { PAL } from '@/constants/palette';
 import { DiaryEntry, Emotion, EmotionKey } from '@/lib/types';
 import { generateId, saveEntry, formatDate, makeDateObj } from '@/lib/storage';
 import { schedulePendingComments } from '@/lib/ai';
+import { scheduleCommentNotification } from '@/lib/notifications';
 import { CloseIcon, MicIcon } from '@/components/Icons';
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
@@ -66,15 +67,27 @@ export default function WriteScreen() {
     try {
       const date = new Date();
       const now = Date.now();
+      const entryId = generateId();
+      const preview = text.trim().slice(0, 60) + (text.trim().length > 60 ? '…' : '');
+      const pending = schedulePendingComments(now);
+
+      // Schedule local notifications and attach their IDs
+      const pendingWithNotifs = await Promise.all(
+        pending.map(async p => {
+          const notifId = await scheduleCommentNotification(entryId, p.persona, p.scheduledAt, preview);
+          return { ...p, notifId: notifId ?? undefined };
+        }),
+      );
+
       const entry: DiaryEntry = {
-        id: generateId(),
+        id: entryId,
         date: formatDate(date),
         dateObj: makeDateObj(date),
         body: text.trim(),
-        preview: text.trim().slice(0, 60) + (text.trim().length > 60 ? '…' : ''),
+        preview,
         emotions: selectedEmotions,
         comments: [],
-        pendingComments: schedulePendingComments(now),
+        pendingComments: pendingWithNotifs,
         createdAt: now,
       };
 

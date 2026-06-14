@@ -112,3 +112,10 @@ export const CheckIcon = ({ size = 14, color = 'currentColor' }: IconProps) => (
     <Path d="M5 12l4 4 10-10" />
   </Svg>
 );
+
+export const BellIcon = ({ size = 22, color = 'currentColor', filled = false }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" fill={filled ? color : 'none'} fillOpacity={filled ? 0.15 : 0} />
+    <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </Svg>
+);

@@ -1,7 +1,8 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import {
   NotoSerifKR_400Regular,
@@ -12,8 +13,10 @@ import {
   NotoSansKR_500Medium,
   NotoSansKR_600SemiBold,
 } from '@expo-google-fonts/noto-sans-kr';
+import { configureNotifications, requestNotificationPermissions } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
+configureNotifications();
 
 export default function RootLayout() {
   const [loaded] = useFonts({
@@ -25,8 +28,20 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
+    if (loaded) {
+      SplashScreen.hideAsync();
+      requestNotificationPermissions();
+    }
   }, [loaded]);
+
+  // Navigate to entry when user taps a notification
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const entryId = response.notification.request.content.data?.entryId as string | undefined;
+      if (entryId) router.push(`/entry/${entryId}`);
+    });
+    return () => sub.remove();
+  }, []);
 
   if (!loaded) return null;
 
