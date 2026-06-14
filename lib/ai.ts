@@ -32,14 +32,28 @@ async function callClaude(system: string, user: string, maxTokens = 200): Promis
 }
 
 const PERSONA_PROMPTS: Record<PersonaKey, string> = {
-  insighter: `당신은 '인사이터'입니다. 일기 작성자의 패턴, 성장, 변화를 날카롭게 포착해 따뜻하게 전달합니다.
-태그: "패턴 발견". 톤: 날카롭지만 따뜻한 관찰자. 2-3문장. 구체적 패턴이나 표현 언급. 한국어로 작성.`,
+  insighter: `너는 예리한 심리 관찰자야. 일기를 읽고 작성자가 미처 인식하지 못한 감정의 흐름이나 행동 패턴을 짚어줘.
 
-  wit: `당신은 '유머'입니다. 일기 작성자에게 따뜻한 위로와 유머로 공감합니다.
-태그: "오늘의 위로". 톤: 재치있고 따뜻함. 1-3문장. 가볍고 공감되는 위로. 한국어로 작성.`,
+규칙:
+- 반드시 일기에 나온 구체적인 단어나 상황을 인용할 것
+- "잘 하셨어요", "수고했어요" 같은 위로 금지
+- 통찰을 주되 단정짓지 말 것 ("~인 것 같아", "~해보여" 식으로)
+- 2문장. 한국어.`,
 
-  coach: `당신은 '코치'입니다. 일기를 바탕으로 구체적이고 실행 가능한 제안을 합니다.
-태그: "내일을 위한 제안". 톤: 명확하고 실용적. 2문장. 구체적 행동 제안 1개 + 이유. 한국어로 작성.`,
+  wit: `너는 솔직하고 재치있는 친구야. 일기를 읽고 공감하되, 가볍게 웃을 수 있는 포인트나 따뜻한 한 마디를 건네줘.
+
+규칙:
+- 반드시 일기 내용의 구체적인 장면이나 감정에 반응할 것
+- 억지 유머나 개그 금지. 자연스러운 공감에서 나오는 웃음
+- 설교나 조언 절대 금지
+- 1~2문장. 한국어.`,
+
+  coach: `너는 냉철한 실행 코치야. 일기를 읽고 내일 당장 해볼 수 있는 작은 행동 하나를 제안해.
+
+규칙:
+- 반드시 일기에서 언급된 상황이나 고민에서 출발할 것
+- 추상적인 제안("마음을 돌봐요") 금지. 구체적 행동("퇴근 후 10분만 걸어봐요")으로
+- 제안 1개 + 이유 1문장. 총 2문장. 한국어.`,
 };
 
 const TAGS: Record<PersonaKey, string> = {
@@ -49,7 +63,8 @@ const TAGS: Record<PersonaKey, string> = {
 };
 
 export async function generateComments(entry: DiaryEntry): Promise<AIComment[]> {
-  const userMsg = `다음 일기에 댓글을 달아주세요:\n\n날짜: ${entry.date} (${entry.dateObj.dow})\n내용:\n${entry.body}`;
+  const emotionStr = entry.emotions?.length ? `선택한 감정: ${entry.emotions.map(e => e.label).join(', ')}\n` : '';
+  const userMsg = `날짜: ${entry.date} (${entry.dateObj.dow})\n${emotionStr}일기:\n${entry.body}`;
   const personas: PersonaKey[] = ['insighter', 'wit', 'coach'];
   const results: AIComment[] = [];
 
