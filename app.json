@@ -1,25 +1,32 @@
 {
   "expo": {
-    "name": "haru-rn",
+    "name": "하루",
     "slug": "haru-rn",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "haru",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sigcrew.haru"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#F6EFE2",
+        "foregroundImage": "./assets/icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.sigcrew.haru"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }

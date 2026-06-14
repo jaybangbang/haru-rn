@@ -1,0 +1,31 @@
+export const PAL = {
+  bg: '#F6EFE2',
+  bgDeep: '#EFE6D2',
+  paper: '#FBF6EA',
+  ink: '#1F1B3A',
+  indigo: '#2D2A5C',
+  indigoDeep: '#1B173F',
+  indigoSoft: '#5A5586',
+  amber: '#D9914A',
+  amberSoft: '#F5DCB6',
+  amberDeep: '#A86A2C',
+  sage: '#A6B89A',
+  sageSoft: '#E3EBD9',
+  line: 'rgba(31,27,58,0.10)',
+  lineSoft: 'rgba(31,27,58,0.06)',
+  muted: 'rgba(31,27,58,0.55)',
+  faint: 'rgba(31,27,58,0.35)',
+  white: '#FFFFFF',
+  red: '#C8472E',
+} as const;
+
+export const EMOTION_COLOR: Record<string, string> = {
+  confident: '#1B173F',
+  excited: '#A86A2C',
+  joy: '#D9914A',
+  will: '#A86A2C',
+  complex: '#2D2A5C',
+  worry: '#5A5586',
+  tired: '#7A6F5A',
+  default: '#5A5586',
+};
