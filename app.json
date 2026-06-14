@@ -9,7 +9,10 @@
     "scheme": "haru",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sigcrew.haru"
+      "bundleIdentifier": "com.sigcrew.haru",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {

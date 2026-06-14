@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { DiaryEntry, Emotion, EmotionKey } from '@/lib/types';
 import { generateId, saveEntry, formatDate, makeDateObj } from '@/lib/storage';
-import { generateComments } from '@/lib/ai';
+import { schedulePendingComments } from '@/lib/ai';
 import { CloseIcon, MicIcon } from '@/components/Icons';
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
@@ -35,7 +35,6 @@ export default function WriteScreen() {
   const [selectedEmotions, setSelectedEmotions] = useState<Emotion[]>([]);
   const [hintIdx, setHintIdx] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [submitPhase, setSubmitPhase] = useState<'saving' | 'ai'>('saving');
   const inputRef = useRef<TextInput>(null);
 
   const now = new Date();
@@ -63,10 +62,10 @@ export default function WriteScreen() {
   const handleDone = async () => {
     if (!text.trim()) return;
     setSubmitting(true);
-    setSubmitPhase('saving');
 
     try {
       const date = new Date();
+      const now = Date.now();
       const entry: DiaryEntry = {
         id: generateId(),
         date: formatDate(date),
@@ -75,16 +74,11 @@ export default function WriteScreen() {
         preview: text.trim().slice(0, 60) + (text.trim().length > 60 ? '…' : ''),
         emotions: selectedEmotions,
         comments: [],
-        createdAt: Date.now(),
+        pendingComments: schedulePendingComments(now),
+        createdAt: now,
       };
 
       await saveEntry(entry);
-
-      setSubmitPhase('ai');
-      const comments = await generateComments(entry);
-      entry.comments = comments;
-      await saveEntry(entry);
-
       router.replace(`/entry/${entry.id}`);
     } catch (e) {
       Alert.alert('오류', '저장 중 문제가 발생했어요. 다시 시도해주세요.');
@@ -167,16 +161,12 @@ export default function WriteScreen() {
         <Text style={styles.charCount}>{text.length} 자</Text>
       </ScrollView>
 
-      {/* AI loading overlay */}
+      {/* Loading overlay */}
       {submitting && (
         <View style={styles.overlay}>
           <ActivityIndicator size="large" color={PAL.amber} />
-          <Text style={styles.overlayTitle}>
-            {submitPhase === 'saving' ? '저장 중…' : 'AI가 읽고 있어요…'}
-          </Text>
-          {submitPhase === 'ai' && (
-            <Text style={styles.overlaySub}>세 명이 댓글을 준비 중이에요</Text>
-          )}
+          <Text style={styles.overlayTitle}>저장 중…</Text>
+          <View style={{ height: 0 }} />
         </View>
       )}
     </KeyboardAvoidingView>

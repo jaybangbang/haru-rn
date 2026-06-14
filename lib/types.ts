@@ -12,6 +12,13 @@ export interface AIComment {
   tag: string;
   text: string;
   createdAt: number;
+  replyTo?: number; // index into comments array at time of posting
+}
+
+export interface PendingComment {
+  persona: PersonaKey;
+  scheduledAt: number;
+  order: number; // 1, 2, 3
 }
 
 export interface DiaryEntry {
@@ -22,7 +29,8 @@ export interface DiaryEntry {
   preview: string;
   emotions: Emotion[];
   comments: AIComment[];
-  energyScore?: number; // 1-10, optional (AI-estimated)
+  pendingComments?: PendingComment[];
+  energyScore?: number;
   createdAt: number;
 }
 
