@@ -27,6 +27,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7bc65326-47a9-4ad7-ae6e-9845d2fdc603"
+      }
+    },
+    "owner": "terra586"
   }
 }
