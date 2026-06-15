@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Alert,
+  View, Text, ScrollView, Pressable, StyleSheet, Alert, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -9,44 +9,17 @@ import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, saveEntry, deleteEntry } from '@/lib/storage';
 import { generateSingleComment } from '@/lib/ai';
 import { cancelNotification, notifyCommentReady } from '@/lib/notifications';
+import { PERSONAS as PERSONA_PROFILES } from '@/lib/personas';
 import EmotionPill from '@/components/EmotionPill';
 import {
-  ChevronLeftIcon, SparkleIcon, MagnifyIcon, BoltIcon,
-  CompassIcon, HeartIcon, CommentIcon,
+  ChevronLeftIcon, SparkleIcon, HeartIcon, CommentIcon, PenIcon,
 } from '@/components/Icons';
 
-const PERSONAS = {
-  insighter: {
-    nameKo: '인사이터',
-    handle: '@insighter.ai',
-    avatarColors: ['#2D2A5C', '#1B173F'],
-    avatarColor: '#F5DCB6',
-    accent: '#2D2A5C',
-    Icon: MagnifyIcon,
-    tag: '패턴 발견',
-    likes: 12,
-  },
-  wit: {
-    nameKo: '유머',
-    handle: '@wit.ai',
-    avatarColors: ['#F7E1B0', '#D9914A'],
-    avatarColor: '#3A2A12',
-    accent: '#A86A2C',
-    Icon: BoltIcon,
-    tag: '오늘의 위로',
-    likes: 34,
-  },
-  coach: {
-    nameKo: '코치',
-    handle: '@coach.ai',
-    avatarColors: ['#C8D5B7', '#7A8A66'],
-    avatarColor: '#1F2A14',
-    accent: '#4A5A38',
-    Icon: CompassIcon,
-    tag: '내일을 위한 제안',
-    likes: 8,
-  },
-};
+const PERSONA_META = {
+  insighter: { handle: '@siwon.ai',   accent: '#2D2A5C', tag: '패턴 발견',       likes: 12 },
+  wit:       { handle: '@hakyung.ai', accent: '#A86A2C', tag: '오늘의 위로',      likes: 34 },
+  coach:     { handle: '@seojin.ai',  accent: '#4A5A38', tag: '내일을 위한 제안', likes: 8  },
+} as const;
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -71,6 +44,7 @@ export default function EntryDetailScreen() {
   const insets = useSafeAreaInsets();
   const [entry, setEntry] = useState<DiaryEntry | null>(null);
   const [liked, setLiked] = useState<Record<number, boolean>>({});
+  const [showMenu, setShowMenu] = useState(false);
   const isGenerating = useRef(false);
 
   const checkAndGenerate = useCallback(async () => {
@@ -113,13 +87,14 @@ export default function EntryDetailScreen() {
   }, [id]);
 
   useEffect(() => {
-    checkAndGenerate();
-    const interval = setInterval(checkAndGenerate, 30_000);
+    checkAndGenerate().catch(() => {});
+    const interval = setInterval(() => checkAndGenerate().catch(() => {}), 30_000);
     return () => clearInterval(interval);
   }, [checkAndGenerate]);
 
   const handleDelete = () => {
-    Alert.alert('일기 삭제', '이 일기를 삭제할까요?', [
+    setShowMenu(false);
+    Alert.alert('일기 삭제', '이 일기를 영구 삭제할까요? 되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       {
         text: '삭제', style: 'destructive',
@@ -162,10 +137,29 @@ export default function EntryDetailScreen() {
             <ChevronLeftIcon size={22} color={PAL.ink} />
           </Pressable>
           <Text style={styles.topTitle}>Entry</Text>
-          <Pressable onPress={handleDelete} hitSlop={8} style={styles.moreBtn}>
-            <Text style={{ color: PAL.muted, fontSize: 20, letterSpacing: 2 }}>···</Text>
-          </Pressable>
+          <View style={styles.topActions}>
+            <Pressable
+              onPress={() => router.push({ pathname: '/write', params: { entryId: id } })}
+              hitSlop={8} style={styles.editBtn}
+            >
+              <PenIcon size={18} color={PAL.muted} />
+            </Pressable>
+            <Pressable onPress={() => setShowMenu(v => !v)} hitSlop={8} style={styles.moreBtn}>
+              <Text style={{ color: PAL.muted, fontSize: 20, letterSpacing: 2 }}>···</Text>
+            </Pressable>
+          </View>
         </View>
+
+        {/* Dropdown menu */}
+        {showMenu && (
+          <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
+            <View style={styles.menuBox}>
+              <Pressable style={styles.menuItem} onPress={handleDelete}>
+                <Text style={styles.menuItemTextDanger}>삭제</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        )}
 
         {/* Post card */}
         <View style={styles.postCard}>
@@ -216,13 +210,13 @@ export default function EntryDetailScreen() {
 
           {/* Render top-level comments and their replies */}
           {topLevel.map(c => {
-            const persona = PERSONAS[c.persona];
+            const persona = PERSONA_PROFILES[c.persona as PersonaKey];
             if (!persona) return null;
             const myReplies = replies.filter(r => r.replyTo === c._idx);
             return (
               <View key={c._idx}>
                 <CommentRow
-                  persona={persona}
+                  personaKey={c.persona as PersonaKey}
                   comment={c}
                   liked={!!liked[c._idx]}
                   onLike={() => setLiked(l => ({ ...l, [c._idx]: !l[c._idx] }))}
@@ -230,18 +224,18 @@ export default function EntryDetailScreen() {
                   isReply={false}
                 />
                 {myReplies.map(r => {
-                  const rPersona = PERSONAS[r.persona];
+                  const rPersona = PERSONA_PROFILES[r.persona as PersonaKey];
                   if (!rPersona) return null;
                   return (
                     <CommentRow
                       key={r._idx}
-                      persona={rPersona}
+                      personaKey={r.persona as PersonaKey}
                       comment={r}
                       liked={!!liked[r._idx]}
                       onLike={() => setLiked(l => ({ ...l, [r._idx]: !l[r._idx] }))}
                       timeAgoStr={timeAgo(r.createdAt)}
                       isReply
-                      replyToName={persona.nameKo}
+                      replyToName={PERSONA_PROFILES[c.persona as PersonaKey]?.name}
                     />
                   );
                 })}
@@ -252,28 +246,24 @@ export default function EntryDetailScreen() {
           {/* Orphan replies (replyTo points to a non-top-level comment) */}
           {replies
             .filter(r => topLevel.every(t => t._idx !== r.replyTo))
-            .map(r => {
-              const rPersona = PERSONAS[r.persona];
-              if (!rPersona) return null;
-              return (
-                <CommentRow
-                  key={r._idx}
-                  persona={rPersona}
-                  comment={r}
-                  liked={!!liked[r._idx]}
-                  onLike={() => setLiked(l => ({ ...l, [r._idx]: !l[r._idx] }))}
-                  timeAgoStr={timeAgo(r.createdAt)}
-                  isReply={false}
-                />
-              );
-            })}
+            .map(r => (
+              <CommentRow
+                key={r._idx}
+                personaKey={r.persona as PersonaKey}
+                comment={r}
+                liked={!!liked[r._idx]}
+                onLike={() => setLiked(l => ({ ...l, [r._idx]: !l[r._idx] }))}
+                timeAgoStr={timeAgo(r.createdAt)}
+                isReply={false}
+              />
+            ))}
 
           {/* Upcoming comment indicator */}
           {nextPending && (
             <View style={styles.pendingRow}>
-              <View style={[styles.pendingDot, { backgroundColor: PERSONAS[nextPending.persona]?.accent ?? PAL.muted }]} />
+              <View style={[styles.pendingDot, { backgroundColor: PERSONA_META[nextPending.persona as PersonaKey]?.accent ?? PAL.muted }]} />
               <Text style={styles.pendingText}>
-                {PERSONAS[nextPending.persona]?.nameKo ?? 'AI'}가 읽는 중…{' '}
+                {PERSONA_PROFILES[nextPending.persona as PersonaKey]?.name ?? 'AI'}가 읽는 중…{' '}
                 <Text style={styles.pendingTime}>{timeUntil(nextPending.scheduledAt)}</Text>
               </Text>
             </View>
@@ -293,9 +283,9 @@ export default function EntryDetailScreen() {
 }
 
 function CommentRow({
-  persona, comment, liked, onLike, timeAgoStr, isReply, replyToName,
+  personaKey, comment, liked, onLike, timeAgoStr, isReply, replyToName,
 }: {
-  persona: typeof PERSONAS.insighter;
+  personaKey: PersonaKey;
   comment: AIComment & { _idx: number };
   liked: boolean;
   onLike: () => void;
@@ -303,28 +293,29 @@ function CommentRow({
   isReply: boolean;
   replyToName?: string;
 }) {
-  const tagBg = persona.accent + '1F';
+  const profile = PERSONA_PROFILES[personaKey];
+  const meta = PERSONA_META[personaKey];
+  const tagBg = meta.accent + '1F';
+  const avatarSize = isReply ? 28 : 36;
+
   return (
     <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
       {isReply && <View style={styles.replyConnector} />}
-      <View style={[
-        styles.commentAvatar,
-        { backgroundColor: persona.avatarColors[1] },
-        isReply && styles.commentAvatarSmall,
-      ]}>
-        <persona.Icon size={isReply ? 13 : 17} color={persona.avatarColor} />
-      </View>
+      <Image
+        source={profile.image}
+        style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}
+      />
       <View style={{ flex: 1 }}>
         {isReply && replyToName && (
           <Text style={styles.replyToLabel}>↩ {replyToName}에게 답글</Text>
         )}
         <View style={styles.commentMeta}>
-          <Text style={styles.commentName}>{persona.nameKo}</Text>
-          <Text style={[styles.commentHandle, { color: persona.accent }]}>{persona.handle}</Text>
+          <Text style={styles.commentName}>{profile.name}</Text>
+          <Text style={[styles.commentHandle, { color: meta.accent }]}>{meta.handle}</Text>
           <Text style={styles.commentTime}>· {timeAgoStr}</Text>
           <View style={{ flex: 1 }} />
           <View style={[styles.commentTag, { backgroundColor: tagBg }]}>
-            <Text style={[styles.commentTagText, { color: persona.accent }]}>{comment.tag}</Text>
+            <Text style={[styles.commentTagText, { color: meta.accent }]}>{comment.tag}</Text>
           </View>
         </View>
         <Text style={styles.commentText}>{comment.text}</Text>
@@ -332,7 +323,7 @@ function CommentRow({
           <Pressable onPress={onLike} style={styles.actionBtn}>
             <HeartIcon size={13} color={liked ? PAL.red : PAL.muted} filled={liked} />
             <Text style={[styles.actionText, { color: liked ? PAL.red : PAL.muted }]}>
-              {persona.likes + (liked ? 1 : 0)}
+              {meta.likes + (liked ? 1 : 0)}
             </Text>
           </Pressable>
           <Pressable style={styles.actionBtn}>
@@ -364,10 +355,27 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2, textTransform: 'uppercase',
     fontFamily: 'NotoSerifKR-Regular',
   },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  editBtn: {
+    width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center',
+  },
   moreBtn: {
     width: 36, height: 36,
     alignItems: 'center', justifyContent: 'center',
   },
+  menuOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100,
+  },
+  menuBox: {
+    position: 'absolute', top: 52, right: 14,
+    backgroundColor: PAL.paper,
+    borderRadius: 12, borderWidth: 1, borderColor: PAL.lineSoft,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
+    minWidth: 120, overflow: 'hidden',
+  },
+  menuItem: { paddingVertical: 13, paddingHorizontal: 18 },
+  menuItemTextDanger: { fontSize: 15, color: PAL.red, fontWeight: '500' },
   postCard: {
     marginHorizontal: 20,
     marginTop: 8,

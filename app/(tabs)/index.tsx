@@ -3,13 +3,16 @@ import {
   View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
   Modal, FlatList, SafeAreaView,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, formatDate, getLastReadAt, setLastReadAt } from '@/lib/storage';
 import EntryCard from '@/components/EntryCard';
-import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon } from '@/components/Icons';
+import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
 
 const PROMPTS = [
   '🔥 오늘 가장 잘 풀린 일은 무엇이었나요?',
@@ -57,13 +60,26 @@ export default function HomeScreen() {
   const [notifItems, setNotifItems] = useState<NotifItem[]>([]);
   const lastReadAt = useRef<number>(0);
 
-  const today = formatDate(new Date());
-  const todayEntry = entries.find(e => e.date === today);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [showAuthBanner, setShowAuthBanner] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(true);
+
+  const todayStr = formatDate(new Date());
+  const selectedStr = formatDate(selectedDate);
+  const isToday = selectedStr === todayStr;
+  const todayEntry = entries.find(e => e.date === selectedStr);
 
   const loadData = useCallback(async () => {
     const [all, lrAt] = await Promise.all([loadEntries(), getLastReadAt()]);
     lastReadAt.current = lrAt;
     setEntries(all);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    setIsAnonymous(user?.is_anonymous ?? true);
+    setUserEmail(user?.email ?? user?.user_metadata?.full_name ?? null);
 
     // Collect all AI comments across entries, sorted newest first
     const items: NotifItem[] = [];
@@ -98,7 +114,7 @@ export default function HomeScreen() {
     setUnreadCount(0);
   };
 
-  const recent = entries.filter(e => e.date !== today).slice(0, 10);
+  const recent = entries.filter(e => e.date !== todayStr).slice(0, 10);
 
   return (
     <>
@@ -124,12 +140,20 @@ export default function HomeScreen() {
                 </View>
               )}
             </Pressable>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>나</Text>
-            </View>
+            <Pressable
+              onPress={() => isAnonymous ? router.push('/auth') : setShowAccountModal(true)}
+              hitSlop={8}
+              style={[styles.avatar, isAnonymous && styles.avatarAnon]}
+            >
+              {isAnonymous
+                ? <PersonIcon size={18} color={PAL.muted} />
+                : <Text style={styles.avatarText}>{(userEmail?.[0] ?? '?').toUpperCase()}</Text>
+              }
+            </Pressable>
           </View>
         </View>
 
+  
         {/* Prompt banner */}
         <Pressable style={styles.promptBanner} onPress={() => router.push('/write')}>
           <SparkleIcon size={20} color={PAL.amberDeep} />
@@ -139,9 +163,29 @@ export default function HomeScreen() {
           <ArrowRightIcon size={16} color={PAL.amberDeep} />
         </Pressable>
 
-        {/* Today */}
+        {/* Today / Selected date */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>TODAY · {new Date().getMonth() + 1}.{new Date().getDate()}</Text>
+          <Pressable onPress={() => setShowPicker(v => !v)} style={styles.sectionLabelRow}>
+            <Text style={styles.sectionLabel}>
+              {isToday
+                ? `TODAY · ${selectedDate.getMonth() + 1}.${selectedDate.getDate()}`
+                : `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 · 과거 일기`}
+            </Text>
+            <Text style={styles.sectionLabelCaret}>{showPicker ? '▲' : '▽'}</Text>
+          </Pressable>
+
+          {showPicker && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display="spinner"
+              maximumDate={new Date()}
+              locale="ko-KR"
+              onChange={(_, date) => { if (date) setSelectedDate(date); }}
+              style={{ backgroundColor: PAL.bg }}
+            />
+          )}
+
           {todayEntry ? (
             <Pressable onPress={() => router.push(`/entry/${todayEntry.id}`)} style={styles.todayCard}>
               <Text style={styles.todayBody} numberOfLines={3}>{todayEntry.body}</Text>
@@ -152,14 +196,19 @@ export default function HomeScreen() {
               </View>
             </Pressable>
           ) : (
-            <Pressable style={styles.emptyCard} onPress={() => router.push('/write')}>
+            <Pressable
+              style={styles.emptyCard}
+              onPress={() => router.push({ pathname: '/write', params: { date: selectedStr } })}
+            >
               <View style={styles.ruledLines} />
               <View style={{ position: 'relative' }}>
-                <Text style={styles.emptyTitle}>오늘의 진전을 기록해볼까요.</Text>
+                <Text style={styles.emptyTitle}>
+                  {isToday ? '오늘의 진전을 기록해볼까요.' : '이 날의 기억을 기록해볼까요.'}
+                </Text>
                 <Text style={styles.emptySub}>짧은 한 줄도 괜찮아요. 내일의 자신이 고마워할 거예요.</Text>
                 <View style={styles.writeBtn}>
                   <PenIcon size={14} color={PAL.bg} />
-                  <Text style={styles.writeBtnText}>오늘의 일기 쓰기</Text>
+                  <Text style={styles.writeBtnText}>{isToday ? '오늘의 일기 쓰기' : '이 날 일기 쓰기'}</Text>
                 </View>
               </View>
             </Pressable>
@@ -185,6 +234,93 @@ export default function HomeScreen() {
           <Text style={styles.footer}>— 쓸수록, 나를 알아간다 —</Text>
         )}
       </ScrollView>
+
+      {/* Account modal */}
+      <Modal visible={showAccountModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAccountModal(false)}>
+        <SafeAreaView style={styles.accountModal}>
+          <View style={styles.accountHeader}>
+            <Text style={styles.accountTitle}>계정</Text>
+            <Pressable onPress={() => setShowAccountModal(false)} hitSlop={12}>
+              <Text style={styles.panelClose}>닫기</Text>
+            </Pressable>
+          </View>
+          <View style={styles.accountBody}>
+            <View style={styles.accountAvatarLarge}>
+              <Text style={styles.accountAvatarText}>{(userEmail?.[0] ?? '?').toUpperCase()}</Text>
+            </View>
+            <Text style={styles.accountEmail}>{userEmail ?? '—'}</Text>
+          </View>
+          <Pressable
+            style={styles.logoutBtn}
+            onPress={async () => {
+              await supabase.auth.signOut();
+              setShowAccountModal(false);
+              setIsAnonymous(true);
+              setUserEmail(null);
+            }}
+          >
+            <Text style={styles.logoutBtnText}>로그아웃</Text>
+          </Pressable>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Auth full-screen prompt */}
+      <Modal visible={showAuthBanner} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={styles.authModal}>
+          <View style={styles.authModalInner}>
+            {/* Top graphic */}
+            <View style={styles.authIconCircle}>
+              <Text style={{ fontSize: 36 }}>📖</Text>
+            </View>
+
+            {/* Copy */}
+            <Text style={styles.authModalHeadline}>
+              오늘 쓴 일기,{'\n'}내일도 읽을 수 있게.
+            </Text>
+            <Text style={styles.authModalBody}>
+              지금은 이 기기에만 저장돼요.{'\n'}계정을 만들면 기기를 바꿔도, 앱을 지워도{'\n'}일기가 그대로 남아있어요.
+            </Text>
+
+            {/* Feature pills */}
+            <View style={styles.authFeatureRow}>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🌐</Text>
+                <Text style={styles.authFeatureText}>웹에서도 작성</Text>
+              </View>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🔄</Text>
+                <Text style={styles.authFeatureText}>기기 간 동기화</Text>
+              </View>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🔒</Text>
+                <Text style={styles.authFeatureText}>안전하게 보관</Text>
+              </View>
+            </View>
+
+            {/* CTAs */}
+            <View style={styles.authModalActions}>
+              <Pressable
+                style={styles.authModalPrimary}
+                onPress={() => {
+                  setShowAuthBanner(false);
+                  router.push('/auth');
+                }}
+              >
+                <Text style={styles.authModalPrimaryText}>계정 만들기</Text>
+              </Pressable>
+              <Pressable
+                style={styles.authModalSecondary}
+                onPress={async () => {
+                  await AsyncStorage.setItem('haru_auth_banner_dismissed', '1');
+                  setShowAuthBanner(false);
+                }}
+              >
+                <Text style={styles.authModalSecondaryText}>나중에 할게요</Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* Notification Panel */}
       <Modal
@@ -275,7 +411,80 @@ const styles = StyleSheet.create({
     backgroundColor: PAL.indigoDeep,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { color: PAL.bg, fontSize: 14, fontWeight: '500' },
+  avatarAnon: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5, borderColor: PAL.line,
+  },
+  avatarText: { color: PAL.bg, fontSize: 14, fontWeight: '600' },
+  accountModal: { flex: 1, backgroundColor: PAL.bg },
+  accountHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: PAL.lineSoft,
+  },
+  accountTitle: { fontSize: 17, fontWeight: '600', color: PAL.ink, fontFamily: 'NotoSerifKR-Medium' },
+  accountBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  accountAvatarLarge: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: PAL.indigoDeep,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  accountAvatarText: { color: PAL.bg, fontSize: 28, fontWeight: '600' },
+  accountEmail: { fontSize: 15, color: PAL.muted },
+  logoutBtn: {
+    margin: 24, padding: 16, borderRadius: 14,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.line,
+    alignItems: 'center',
+  },
+  logoutBtnText: { fontSize: 15, color: PAL.red, fontWeight: '500' },
+  authModal: {
+    flex: 1, backgroundColor: PAL.indigoDeep,
+  },
+  authModalInner: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 32, paddingBottom: 40,
+  },
+  authIconCircle: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 32,
+  },
+  authModalHeadline: {
+    fontSize: 28, fontWeight: '600', color: PAL.bg,
+    fontFamily: 'NotoSerifKR-Medium',
+    textAlign: 'center', lineHeight: 42, marginBottom: 16,
+  },
+  authModalBody: {
+    fontSize: 15, color: 'rgba(255,255,255,0.65)',
+    textAlign: 'center', lineHeight: 24, marginBottom: 32,
+  },
+  authFeatureRow: {
+    flexDirection: 'row', gap: 10, marginBottom: 48, flexWrap: 'wrap', justifyContent: 'center',
+  },
+  authFeaturePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  authFeatureIcon: { fontSize: 14 },
+  authFeatureText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+  authModalActions: { width: '100%', gap: 12 },
+  authModalPrimary: {
+    backgroundColor: PAL.bg, borderRadius: 16,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  authModalPrimaryText: {
+    fontSize: 16, fontWeight: '700', color: PAL.indigoDeep, letterSpacing: -0.3,
+  },
+  authModalSecondary: {
+    paddingVertical: 14, alignItems: 'center',
+  },
+  authModalSecondaryText: {
+    fontSize: 14, color: 'rgba(255,255,255,0.45)',
+  },
   promptBanner: {
     marginTop: 22, marginHorizontal: 20,
     paddingVertical: 14, paddingHorizontal: 16,
@@ -288,9 +497,15 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1, lineHeight: 20,
   },
   section: { paddingHorizontal: 20, marginTop: 28 },
+  sectionLabelRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10,
+  },
   sectionLabel: {
     fontSize: 12, color: PAL.muted, letterSpacing: 1.5,
-    textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular', marginBottom: 10,
+    textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular',
+  },
+  sectionLabelCaret: {
+    fontSize: 9, color: PAL.faint,
   },
   emptyCard: {
     backgroundColor: PAL.paper, borderRadius: 18, padding: 28,

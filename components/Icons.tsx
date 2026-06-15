@@ -119,3 +119,10 @@ export const BellIcon = ({ size = 22, color = 'currentColor', filled = false }: 
     <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </Svg>
 );
+
+export const PersonIcon = ({ size = 22, color = 'currentColor' }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <Circle cx="12" cy="7" r="4" />
+  </Svg>
+);

@@ -1,34 +1,17 @@
 import { AIComment, DiaryEntry, PendingComment, PersonaKey, WeeklySummary } from './types';
 import { getWeekKey } from './storage';
 
-const BASE = 'https://api.anthropic.com/v1/messages';
-
-function getApiKey(): string | null {
-  return process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? null;
-}
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? '';
 
 async function callClaude(system: string, user: string, maxTokens = 300): Promise<string> {
-  const key = getApiKey();
-  if (!key || key === 'your_api_key_here') throw new Error('no api key');
-
-  const res = await fetch(BASE, {
+  const res = await fetch(`${API_BASE}/api/comment`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: user }],
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system, user, maxTokens }),
   });
-
-  if (!res.ok) throw new Error(`claude error ${res.status}`);
+  if (!res.ok) throw new Error(`api error ${res.status}`);
   const data = await res.json();
-  return data.content?.[0]?.text ?? '';
+  return data.text ?? '';
 }
 
 const PERSONA_PROMPTS: Record<PersonaKey, string> = {

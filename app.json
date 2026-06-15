@@ -10,6 +10,8 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sigcrew.haru",
+      "buildNumber": "17",
+      "xcodeProjectName": "Haru",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -25,6 +27,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      ["./plugins/withRenameXcodeProject", { "projectName": "Haru" }],
       "expo-router",
       "expo-font",
       [
@@ -33,6 +36,13 @@
           "icon": "./assets/icon.png",
           "color": "#F6EFE2",
           "sounds": []
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.211797293864-6594apko9jt9dql1tk874k0li3lc5a93"
         }
       ]
     ],

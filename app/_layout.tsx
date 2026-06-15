@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect } from 'react';
 import {
   NotoSerifKR_400Regular,
@@ -28,10 +29,13 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    if (!loaded) return;
+    (async () => {
+      await SplashScreen.hideAsync();
       requestNotificationPermissions();
-    }
+      const onboarded = await AsyncStorage.getItem('haru_onboarded');
+      if (!onboarded) router.replace('/onboarding');
+    })();
   }, [loaded]);
 
   // Navigate to entry when user taps a notification
@@ -63,6 +67,18 @@ export default function RootLayout() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="onboarding"
+          options={{ headerShown: false, animation: 'fade' }}
+        />
+        <Stack.Screen
+          name="auth"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
           }}
         />
       </Stack>

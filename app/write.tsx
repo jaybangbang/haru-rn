@@ -1,15 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, Alert, ActivityIndicator,
+  Platform, ScrollView, Alert, ActivityIndicator, Modal, SafeAreaView,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { DiaryEntry, Emotion, EmotionKey } from '@/lib/types';
 import { generateId, saveEntry, formatDate, makeDateObj } from '@/lib/storage';
 import { schedulePendingComments } from '@/lib/ai';
 import { scheduleCommentNotification } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
 import { CloseIcon, MicIcon } from '@/components/Icons';
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
@@ -30,21 +33,62 @@ const EMOTION_OPTIONS: Emotion[] = [
   { key: 'tired', label: '피곤함', emoji: '😴' },
 ];
 
+function makeDateLabel(d: Date) {
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${DOW_KO[d.getDay()]}`;
+}
+
+function isToday(d: Date) {
+  const t = new Date();
+  return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+}
+
 export default function WriteScreen() {
   const insets = useSafeAreaInsets();
+  const { date: dateParam, entryId } = useLocalSearchParams<{ date?: string; entryId?: string }>();
+  const isEditMode = !!entryId;
   const [text, setText] = useState('');
   const [selectedEmotions, setSelectedEmotions] = useState<Emotion[]>([]);
   const [hintIdx, setHintIdx] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    if (dateParam) {
+      const [y, m, d] = dateParam.split('.').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  });
+  const [showPicker, setShowPicker] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const savedEntryId = useRef<string | null>(null);
+  const existingEntryRef = useRef<DiaryEntry | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   const now = new Date();
-  const dateLabel = `${now.getMonth() + 1}월 ${now.getDate()}일 ${DOW_KO[now.getDay()]}`;
+  const dateLabel = makeDateLabel(selectedDate);
+  const isPast = !isToday(selectedDate);
+
+  // 수정 모드: 기존 데이터 로드
+  useEffect(() => {
+    if (!isEditMode) return;
+    (async () => {
+      const { loadEntries } = await import('@/lib/storage');
+      const all = await loadEntries();
+      const found = all.find(e => e.id === entryId);
+      if (found) {
+        existingEntryRef.current = found;
+        setText(found.body);
+        setSelectedEmotions(found.emotions);
+        const [y, m, d] = found.date.split('.').map(Number);
+        setSelectedDate(new Date(y, m - 1, d));
+      }
+    })();
+  }, [entryId, isEditMode]);
 
   useEffect(() => {
+    if (isEditMode) return;
     const t = setInterval(() => setHintIdx(i => (i + 1) % WRITE_HINTS.length), 3200);
     return () => clearInterval(t);
-  }, []);
+  }, [isEditMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 300);
@@ -65,36 +109,66 @@ export default function WriteScreen() {
     setSubmitting(true);
 
     try {
-      const date = new Date();
-      const now = Date.now();
-      const entryId = generateId();
-      const preview = text.trim().slice(0, 60) + (text.trim().length > 60 ? '…' : '');
-      const pending = schedulePendingComments(now);
+      const trimmed = text.trim();
+      const preview = trimmed.slice(0, 60) + (trimmed.length > 60 ? '…' : '');
 
-      // Schedule local notifications and attach their IDs
+      if (isEditMode && existingEntryRef.current) {
+        // 수정 모드: AI 댓글 유지, 새 댓글 예약 안 함
+        const updated: DiaryEntry = {
+          ...existingEntryRef.current,
+          date: formatDate(selectedDate),
+          dateObj: makeDateObj(selectedDate),
+          body: trimmed,
+          preview,
+          emotions: selectedEmotions,
+        };
+        await saveEntry(updated);
+        router.back();
+        return;
+      }
+
+      // 신규 작성
+      const ts = Date.now();
+      const newId = generateId();
+      const pending = schedulePendingComments(ts);
+
       const pendingWithNotifs = await Promise.all(
         pending.map(async p => {
-          const notifId = await scheduleCommentNotification(entryId, p.persona, p.scheduledAt, preview);
+          const notifId = await scheduleCommentNotification(newId, p.persona, p.scheduledAt, preview);
           return { ...p, notifId: notifId ?? undefined };
         }),
       );
 
       const entry: DiaryEntry = {
-        id: entryId,
-        date: formatDate(date),
-        dateObj: makeDateObj(date),
-        body: text.trim(),
+        id: newId,
+        date: formatDate(selectedDate),
+        dateObj: makeDateObj(selectedDate),
+        body: trimmed,
         preview,
         emotions: selectedEmotions,
         comments: [],
         pendingComments: pendingWithNotifs,
-        createdAt: now,
+        createdAt: ts,
       };
 
       await saveEntry(entry);
+
+      // 익명 유저 + 배너 안 닫은 경우 → 회원가입 유도 전체화면
+      const dismissed = await AsyncStorage.getItem('haru_auth_banner_dismissed');
+      if (!dismissed) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.is_anonymous) {
+          savedEntryId.current = entry.id;
+          setShowAuthPrompt(true);
+          setSubmitting(false);
+          return;
+        }
+      }
+
       router.replace(`/entry/${entry.id}`);
     } catch (e) {
-      Alert.alert('오류', '저장 중 문제가 발생했어요. 다시 시도해주세요.');
+      const msg = e instanceof Error ? e.message : JSON.stringify(e);
+      Alert.alert('오류', msg);
       setSubmitting(false);
     }
   };
@@ -109,22 +183,37 @@ export default function WriteScreen() {
         <Pressable onPress={() => router.back()} style={styles.closeBtn} hitSlop={8}>
           <CloseIcon size={22} color={PAL.ink} />
         </Pressable>
-        <View style={{ alignItems: 'center' }}>
+        <Pressable onPress={() => setShowPicker(v => !v)} style={styles.dateCenter}>
           <Text style={styles.dateLabel}>{dateLabel}</Text>
           <Text style={styles.timeSub}>
-            {now.getHours() < 12 ? 'MORNING' : now.getHours() < 18 ? 'AFTERNOON' : 'EVENING'}
+            {isEditMode ? '수정 중' : isPast ? '과거 일기 작성 중' : now.getHours() < 12 ? 'MORNING' : now.getHours() < 18 ? 'AFTERNOON' : 'EVENING'}
           </Text>
-        </View>
+        </Pressable>
         <Pressable
           onPress={handleDone}
           disabled={!text.trim() || submitting}
           style={[styles.doneBtn, text.trim() ? styles.doneBtnActive : styles.doneBtnInactive]}
         >
           <Text style={[styles.doneBtnText, { color: text.trim() ? PAL.bg : PAL.faint }]}>
-            완료
+            {isEditMode ? '수정' : '완료'}
           </Text>
         </Pressable>
       </View>
+
+      {/* Date picker */}
+      {showPicker && (
+        <DateTimePicker
+          value={selectedDate}
+          mode="date"
+          display="spinner"
+          maximumDate={new Date()}
+          locale="ko-KR"
+          onChange={(_, date) => {
+            if (date) setSelectedDate(date);
+          }}
+          style={styles.datePicker}
+        />
+      )}
 
       <ScrollView
         style={{ flex: 1 }}
@@ -132,7 +221,6 @@ export default function WriteScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Writing area */}
         <TextInput
           ref={inputRef}
           value={text}
@@ -145,10 +233,8 @@ export default function WriteScreen() {
           scrollEnabled={false}
         />
 
-        {/* Hint */}
         <Text style={styles.hint}>· {WRITE_HINTS[hintIdx]}</Text>
 
-        {/* Emotion selector */}
         <View style={styles.emotionSection}>
           <Text style={styles.emotionLabel}>오늘의 감정</Text>
           <View style={styles.emotionGrid}>
@@ -170,11 +256,9 @@ export default function WriteScreen() {
           </View>
         </View>
 
-        {/* Char count */}
         <Text style={styles.charCount}>{text.length} 자</Text>
       </ScrollView>
 
-      {/* Loading overlay */}
       {submitting && (
         <View style={styles.overlay}>
           <ActivityIndicator size="large" color={PAL.amber} />
@@ -182,6 +266,61 @@ export default function WriteScreen() {
           <View style={{ height: 0 }} />
         </View>
       )}
+
+      {/* 회원가입 유도 전체화면 */}
+      <Modal visible={showAuthPrompt} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={styles.authModal}>
+          <View style={styles.authModalInner}>
+            <View style={styles.authIconCircle}>
+              <Text style={{ fontSize: 36 }}>📖</Text>
+            </View>
+
+            <Text style={styles.authModalHeadline}>
+              오늘 쓴 일기,{'\n'}내일도 읽을 수 있게.
+            </Text>
+            <Text style={styles.authModalBody}>
+              지금은 이 기기에만 저장돼요.{'\n'}계정을 만들면 기기를 바꿔도, 앱을 지워도{'\n'}일기가 그대로 남아있어요.
+            </Text>
+
+            <View style={styles.authFeatureRow}>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🌐</Text>
+                <Text style={styles.authFeatureText}>웹에서도 작성</Text>
+              </View>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🔄</Text>
+                <Text style={styles.authFeatureText}>기기 간 동기화</Text>
+              </View>
+              <View style={styles.authFeaturePill}>
+                <Text style={styles.authFeatureIcon}>🔒</Text>
+                <Text style={styles.authFeatureText}>안전하게 보관</Text>
+              </View>
+            </View>
+
+            <View style={styles.authModalActions}>
+              <Pressable
+                style={styles.authModalPrimary}
+                onPress={() => {
+                  setShowAuthPrompt(false);
+                  router.replace('/auth');
+                }}
+              >
+                <Text style={styles.authModalPrimaryText}>계정 만들기</Text>
+              </Pressable>
+              <Pressable
+                style={styles.authModalSecondary}
+                onPress={async () => {
+                  await AsyncStorage.setItem('haru_auth_banner_dismissed', '1');
+                  setShowAuthPrompt(false);
+                  if (savedEntryId.current) router.replace(`/entry/${savedEntryId.current}`);
+                }}
+              >
+                <Text style={styles.authModalSecondaryText}>나중에 할게요</Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -202,17 +341,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dateCenter: {
+    alignItems: 'center',
+  },
   dateLabel: {
     fontSize: 16,
     fontWeight: '500',
     color: PAL.ink,
     fontFamily: 'NotoSerifKR-Medium',
+    borderBottomWidth: 1,
+    borderBottomColor: PAL.line,
+    paddingBottom: 1,
   },
   timeSub: {
     fontSize: 10.5,
     color: PAL.muted,
     letterSpacing: 0.8,
     marginTop: 2,
+  },
+  datePicker: {
+    backgroundColor: PAL.bg,
   },
   doneBtn: {
     paddingVertical: 8,
@@ -312,4 +460,46 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     letterSpacing: 0.4,
   },
+  authModal: { flex: 1, backgroundColor: PAL.indigoDeep },
+  authModalInner: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 32, paddingBottom: 40,
+  },
+  authIconCircle: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 32,
+  },
+  authModalHeadline: {
+    fontSize: 28, fontWeight: '600', color: PAL.bg,
+    fontFamily: 'NotoSerifKR-Medium',
+    textAlign: 'center', lineHeight: 42, marginBottom: 16,
+  },
+  authModalBody: {
+    fontSize: 15, color: 'rgba(255,255,255,0.65)',
+    textAlign: 'center', lineHeight: 24, marginBottom: 32,
+  },
+  authFeatureRow: {
+    flexDirection: 'row', gap: 10, marginBottom: 48,
+    flexWrap: 'wrap', justifyContent: 'center',
+  },
+  authFeaturePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  authFeatureIcon: { fontSize: 14 },
+  authFeatureText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+  authModalActions: { width: '100%', gap: 12 },
+  authModalPrimary: {
+    backgroundColor: PAL.bg, borderRadius: 16,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  authModalPrimaryText: {
+    fontSize: 16, fontWeight: '700', color: PAL.indigoDeep, letterSpacing: -0.3,
+  },
+  authModalSecondary: { paddingVertical: 14, alignItems: 'center' },
+  authModalSecondaryText: { fontSize: 14, color: 'rgba(255,255,255,0.45)' },
 });
