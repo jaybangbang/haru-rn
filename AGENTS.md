@@ -25,6 +25,11 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 3. `app/auth.tsx` — Apple/Google/이메일 로그인. 가입 후 `migrate_user_data` RPC로 익명 데이터 이전
 4. 홈 탭 우상단: 익명=PersonIcon(→auth), 로그인=이니셜(→계정 모달+로그아웃)
 
+# 주간 요약 구조 백업
+
+`lib/ai_weekly_v1.ts` — 원래 주간 요약 구조 (3개 인사이트 + 키워드 + 제언 카드).
+현재(v2)는 페르소나 1명이 편지 쓰는 구조로 변경됨. 이전 구조 필요 시 이 파일 참조.
+
 # AI 댓글 흐름
 
 1. 일기 저장 → `schedulePendingComments()` 로 3개 예약 (순서 셔플, 1~10분 랜덤 딜레이)

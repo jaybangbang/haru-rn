@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { PAL } from '@/constants/palette';
-import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
+import { AIComment, DiaryEntry, PendingUserReply, PersonaKey } from '@/lib/types';
 import { loadEntries, saveEntry, deleteEntry } from '@/lib/storage';
 import { generateSingleComment, generateUserReply } from '@/lib/ai';
 import { cancelNotification, notifyCommentReady } from '@/lib/notifications';
@@ -18,10 +18,19 @@ import {
 } from '@/components/Icons';
 
 const PERSONA_META = {
-  insighter: { handle: '@siwon',   accent: '#2D2A5C' },
-  wit:       { handle: '@hakyung', accent: '#A86A2C' },
-  coach:     { handle: '@seojin',  accent: '#4A5A38' },
+  insighter: { handle: '@siwon.ai',   accent: '#2D2A5C' },
+  wit:       { handle: '@hakyung.ai', accent: '#A86A2C' },
+  coach:     { handle: '@chaea.ai',   accent: '#4A5A38' },
 } as const;
+
+const REPLY_DELAYS: Record<PersonaKey, [number, number]> = {
+  wit:       [1,   60],
+  insighter: [60,  480],
+  coach:     [1,   480],
+};
+
+const randMs = (min: number, max: number) =>
+  Math.floor(Math.random() * (max - min + 1) + min) * 60 * 1000;
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -95,7 +104,7 @@ export default function EntryDetailScreen() {
         if (p.notifId) await cancelNotification(p.notifId);
 
         if (comment === null) {
-          // Persona chose to skip (e.g. 박서진 with no career content)
+          // Persona chose to skip (e.g. 유채아 with no career content)
           current = {
             ...current,
             pendingComments: current.pendingComments!.filter(x => x.scheduledAt !== p.scheduledAt),
@@ -108,6 +117,29 @@ export default function EntryDetailScreen() {
             pendingComments: current.pendingComments!.filter(x => x.scheduledAt !== p.scheduledAt),
           };
         }
+        await saveEntry(current);
+        setEntry({ ...current });
+      } catch {
+        // keep pending for next poll
+      }
+    }
+
+    // Process due user replies
+    const pendingReplies = current.pendingUserReplies ?? [];
+    const dueReplies = pendingReplies.filter(p => p.scheduledAt <= now);
+
+    for (const p of dueReplies) {
+      try {
+        const threadHistory = current.comments.filter(
+          (c, i) => i === p.parentIdx || c.replyTo === p.parentIdx
+        );
+        const aiReply = await generateUserReply(current, p.persona, p.userText, threadHistory);
+        aiReply.replyTo = p.parentIdx;
+        current = {
+          ...current,
+          comments: [...current.comments, aiReply],
+          pendingUserReplies: current.pendingUserReplies!.filter(x => x.scheduledAt !== p.scheduledAt),
+        };
         await saveEntry(current);
         setEntry({ ...current });
       } catch {
@@ -170,25 +202,21 @@ export default function EntryDetailScreen() {
     };
 
     const withUser = { ...entry, comments: [...entry.comments, userComment] };
-    setEntry(withUser);
-    await saveEntry(withUser);
 
-    // Generate AI response
-    try {
-      const threadHistory = withUser.comments.filter(
-        (c, i) => i === replyTarget.parentIdx || c.replyTo === replyTarget.parentIdx
-      );
-      const aiReply = await generateUserReply(
-        entry,
-        replyTarget.personaKey,
-        text,
-        threadHistory,
-      );
-      aiReply.replyTo = replyTarget.parentIdx;
-      const withAI = { ...withUser, comments: [...withUser.comments, aiReply] };
-      setEntry(withAI);
-      await saveEntry(withAI);
-    } catch { /* keep user comment, AI reply failed silently */ }
+    // Schedule AI reply with random delay
+    const [min, max] = REPLY_DELAYS[replyTarget.personaKey];
+    const pendingReply: PendingUserReply = {
+      persona: replyTarget.personaKey,
+      scheduledAt: Date.now() + randMs(min, max),
+      userText: text,
+      parentIdx: replyTarget.parentIdx,
+    };
+    const withPending = {
+      ...withUser,
+      pendingUserReplies: [...(withUser.pendingUserReplies ?? []), pendingReply],
+    };
+    setEntry(withPending);
+    await saveEntry(withPending);
 
     setReplyTarget(null);
     setIsReplying(false);

@@ -11,6 +11,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, formatDate, getLastReadAt, setLastReadAt } from '@/lib/storage';
+import { cancelDailyDiaryReminder } from '@/lib/notifications';
 import EntryCard from '@/components/EntryCard';
 import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
 
@@ -254,9 +255,13 @@ export default function HomeScreen() {
             style={styles.logoutBtn}
             onPress={async () => {
               await supabase.auth.signOut();
-              setShowAccountModal(false);
-              setIsAnonymous(true);
-              setUserEmail(null);
+              await AsyncStorage.multiRemove([
+                'haru_onboarded',
+                'haru_notif_time',
+                'haru_weekly_notif_scheduled',
+              ]);
+              await cancelDailyDiaryReminder();
+              router.replace('/onboarding');
             }}
           >
             <Text style={styles.logoutBtnText}>로그아웃</Text>

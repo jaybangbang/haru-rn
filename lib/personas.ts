@@ -29,11 +29,11 @@ export const PERSONAS: Record<PersonaKey, Persona> = {
   },
   coach: {
     key: 'coach',
-    name: '박서진',
+    name: '유채아',
     role: '멘토',
     description: '직업 고민 있을 때만 나타남. 조언은 존댓말로',
     color: '#7A8A66',
-    image: require('../assets/persona_seojin_placeholder.png'),
+    image: require('../assets/persona_chaea.jpg'),
   },
 };
 

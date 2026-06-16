@@ -14,7 +14,7 @@ import {
   NotoSansKR_500Medium,
   NotoSansKR_600SemiBold,
 } from '@expo-google-fonts/noto-sans-kr';
-import { configureNotifications, requestNotificationPermissions } from '@/lib/notifications';
+import { configureNotifications, requestNotificationPermissions, restoreDailyDiaryReminder } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
 configureNotifications();
@@ -33,6 +33,7 @@ export default function RootLayout() {
     (async () => {
       await SplashScreen.hideAsync();
       requestNotificationPermissions();
+      restoreDailyDiaryReminder();
       const onboarded = await AsyncStorage.getItem('haru_onboarded');
       if (!onboarded) router.replace('/onboarding');
     })();

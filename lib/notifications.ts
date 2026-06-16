@@ -1,5 +1,8 @@
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersonaKey } from './types';
+
+const DAILY_NOTIF_ID_KEY = 'haru_daily_notif_id';
 
 const PERSONA_NAMES: Record<PersonaKey, string> = {
   insighter: '인사이터',
@@ -71,5 +74,70 @@ export async function notifyCommentReady(
 export async function cancelNotification(id: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {}
+}
+
+export async function scheduleDailyDiaryReminder(hour: number, minute: number): Promise<void> {
+  // Cancel existing before rescheduling
+  await cancelDailyDiaryReminder();
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '오늘 하루 어땠어요?',
+        body: '잠깐 일기를 써보는 건 어때요?',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+      },
+    });
+    await AsyncStorage.setItem(DAILY_NOTIF_ID_KEY, id);
+  } catch {}
+}
+
+export async function cancelDailyDiaryReminder(): Promise<void> {
+  try {
+    const id = await AsyncStorage.getItem(DAILY_NOTIF_ID_KEY);
+    if (id) await Notifications.cancelScheduledNotificationAsync(id);
+    await AsyncStorage.removeItem(DAILY_NOTIF_ID_KEY);
+  } catch {}
+}
+
+export async function restoreDailyDiaryReminder(): Promise<void> {
+  try {
+    const saved = await AsyncStorage.getItem('haru_notif_time');
+    if (!saved) return;
+    const [hour, minute] = saved.split(':').map(Number);
+    // Only reschedule if not already active
+    const existingId = await AsyncStorage.getItem(DAILY_NOTIF_ID_KEY);
+    if (existingId) {
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      if (scheduled.some(n => n.identifier === existingId)) return;
+    }
+    await scheduleDailyDiaryReminder(hour, minute);
+  } catch {}
+}
+
+export async function scheduleWeeklySummaryNotification(firstEntryTs: number): Promise<void> {
+  const alreadyScheduled = await AsyncStorage.getItem('haru_weekly_notif_scheduled');
+  if (alreadyScheduled) return;
+  const fireAt = firstEntryTs + 7 * 24 * 60 * 60 * 1000;
+  const seconds = Math.max(10, Math.floor((fireAt - Date.now()) / 1000));
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '이번 주 일기 요약이 준비됐어요',
+        body: '친구들이 한 주를 돌아봤어요 — 확인해보세요',
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds,
+        repeats: false,
+      },
+    });
+    await AsyncStorage.setItem('haru_weekly_notif_scheduled', '1');
   } catch {}
 }

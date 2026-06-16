@@ -1,19 +1,21 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
+  View, Text, ScrollView, StyleSheet, ActivityIndicator, Image, Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient as SvgGradient, Stop, ClipPath, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { PAL } from '@/constants/palette';
-import { DiaryEntry, WeeklySummary } from '@/lib/types';
+import { DiaryEntry, PersonaKey, WeeklySummary } from '@/lib/types';
 import {
   loadEntries, loadWeeklySummary, saveWeeklySummary, getWeekKey,
 } from '@/lib/storage';
 import { generateWeeklySummary } from '@/lib/ai';
+import { scheduleWeeklySummaryNotification } from '@/lib/notifications';
+import { PERSONAS } from '@/lib/personas';
 import StreakCard from '@/components/StreakCard';
-import SuggestionCard from '@/components/SuggestionCard';
-import { MagnifyIcon } from '@/components/Icons';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getStreakData(entries: DiaryEntry[]) {
   const today = new Date();
@@ -38,11 +40,31 @@ export default function WeeklyScreen() {
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [summary, setSummary] = useState<WeeklySummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [qaLoading, setQaLoading] = useState(false);
   const weekKey = getWeekKey();
 
   const loadData = useCallback(async () => {
     const all = await loadEntries();
     setEntries(all);
+
+    if (all.length === 0) {
+      setDaysLeft(7);
+      return;
+    }
+
+    const firstTs = Math.min(...all.map(e => e.createdAt));
+    const elapsed = Date.now() - firstTs;
+
+    if (elapsed < SEVEN_DAYS_MS) {
+      const left = Math.ceil((SEVEN_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
+      setDaysLeft(left);
+      // Schedule the "summary ready" notification once
+      scheduleWeeklySummaryNotification(firstTs);
+      return;
+    }
+
+    setDaysLeft(null);
 
     const cached = await loadWeeklySummary(weekKey);
     if (cached) {
@@ -76,7 +98,7 @@ export default function WeeklyScreen() {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={PAL.amber} />
-        <Text style={styles.loadingText}>이번 주 일기를 분석 중이에요…</Text>
+        <Text style={styles.loadingText}>이번 주 일기를 읽는 중이에요…</Text>
       </View>
     );
   }
@@ -95,6 +117,42 @@ export default function WeeklyScreen() {
 
       <StreakCard streak={streak} />
 
+      {/* 7-day waiting state */}
+      {daysLeft !== null && (
+        <View style={styles.waitCard}>
+          <Text style={styles.waitEmoji}>📓</Text>
+          <Text style={styles.waitTitle}>
+            {daysLeft}일 후에 첫 주간 요약이 준비돼요
+          </Text>
+          <Text style={styles.waitBody}>
+            일기를 쓰기 시작한 지 일주일이 지나면{'\n'}친구들이 한 주를 돌아봐 줄 거예요
+          </Text>
+          {__DEV__ && (
+            <Pressable
+              style={[styles.qaBtn, qaLoading && { opacity: 0.5 }]}
+              disabled={qaLoading}
+              onPress={async () => {
+                setQaLoading(true);
+                try {
+                  const all = await loadEntries();
+                  const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                  const recent = all.filter(e => e.createdAt >= since);
+                  const s = await generateWeeklySummary(recent.length > 0 ? recent : all.slice(0, 7), weekKey + '_qa');
+                  setSummary(s);
+                  setDaysLeft(null);
+                } finally {
+                  setQaLoading(false);
+                }
+              }}
+            >
+              <Text style={styles.qaBtnText}>
+                {qaLoading ? '생성 중…' : '🛠 QA: 주간 요약 미리보기'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {/* Chart */}
       {summary && (
         <View style={styles.chartCard}>
@@ -106,32 +164,13 @@ export default function WeeklyScreen() {
         </View>
       )}
 
-      {/* AI comment */}
-      {summary?.comment && (
-        <View style={styles.aiCommentCard}>
-          <View style={styles.aiCommentHeader}>
-            <MagnifyIcon size={14} color="#F5DCB6" />
-            <Text style={styles.aiCommentTitle}>Insighter · 이번 주의 발견</Text>
-          </View>
-          <Text style={styles.aiCommentText}>{summary.comment}</Text>
-        </View>
-      )}
-
-      {/* Suggestions */}
-      {summary && summary.suggestions.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>AI의 제언</Text>
-            <Text style={styles.sectionCount}>{summary.suggestions.length}개의 인사이트</Text>
-          </View>
-          <Text style={styles.sectionSub}>이번 주 일기를 종합해서 정리했어요</Text>
-          <View style={{ gap: 10 }}>
-            {summary.suggestions.map((s, i) => (
-              <SuggestionCard key={i} s={s} />
-            ))}
-          </View>
-        </View>
-      )}
+      {/* Persona letter */}
+      {summary?.comment ? (
+        <LetterCard
+          persona={summary.letterPersona ?? 'insighter'}
+          text={summary.comment}
+        />
+      ) : null}
 
       {/* Keywords */}
       {summary && summary.keywords.length > 0 && (
@@ -141,6 +180,22 @@ export default function WeeklyScreen() {
         </View>
       )}
     </ScrollView>
+  );
+}
+
+function LetterCard({ persona, text }: { persona: PersonaKey; text: string }) {
+  const p = PERSONAS[persona];
+  return (
+    <View style={styles.letterCard}>
+      <View style={styles.letterHeader}>
+        <Image source={p.image} style={styles.letterAvatar} />
+        <View>
+          <Text style={styles.letterName}>{p.name}</Text>
+          <Text style={styles.letterRole}>이번 주 일기를 종합해서 정리했어요</Text>
+        </View>
+      </View>
+      <Text style={styles.letterText}>{text}</Text>
+    </View>
   );
 }
 
@@ -243,6 +298,28 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   headerSub: { marginTop: 4, fontSize: 12, color: PAL.muted },
+  waitCard: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 24, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    alignItems: 'center', gap: 8,
+  },
+  waitEmoji: { fontSize: 32, marginBottom: 4 },
+  waitTitle: {
+    fontSize: 16, fontWeight: '600', color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Medium', textAlign: 'center',
+  },
+  waitBody: {
+    fontSize: 13, color: PAL.muted, textAlign: 'center',
+    lineHeight: 20, marginTop: 4,
+  },
+  qaBtn: {
+    marginTop: 16, paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: 10, backgroundColor: '#2D2A5C22',
+    borderWidth: 1, borderColor: '#2D2A5C44',
+  },
+  qaBtnText: { fontSize: 13, color: PAL.indigoDeep, fontWeight: '500' },
   chartCard: {
     marginHorizontal: 20, marginTop: 20,
     padding: 16, paddingTop: 20,
@@ -254,40 +331,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4, paddingBottom: 6,
   },
   chartLabel: { fontSize: 11.5, color: PAL.muted, letterSpacing: 0.4 },
-  aiCommentCard: {
+  letterCard: {
     marginHorizontal: 20, marginTop: 18,
-    padding: 18, borderRadius: 18,
+    padding: 20, borderRadius: 18,
     backgroundColor: PAL.indigoDeep,
   },
-  aiCommentHeader: {
+  letterHeader: {
     flexDirection: 'row', alignItems: 'center',
-    gap: 8, marginBottom: 10,
+    gap: 12, marginBottom: 14,
   },
-  aiCommentTitle: {
-    fontSize: 13, fontWeight: '600',
-    letterSpacing: 0.5, textTransform: 'uppercase',
-    color: '#F5DCB6',
+  letterAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
   },
-  aiCommentText: {
+  letterName: {
+    fontSize: 15, fontWeight: '600', color: '#F5DCB6',
+    fontFamily: 'NotoSerifKR-Medium',
+  },
+  letterRole: {
+    fontSize: 11, color: 'rgba(245,220,182,0.6)', marginTop: 2,
+  },
+  letterText: {
     fontFamily: 'NotoSerifKR-Regular',
     fontSize: 14.5, lineHeight: 26,
     color: '#F4ECDB', letterSpacing: -0.1,
   },
   section: { marginHorizontal: 20, marginTop: 28 },
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'baseline',
-    justifyContent: 'space-between', marginBottom: 4,
-  },
-  sectionTitle: {
-    fontSize: 18, fontWeight: '500',
-    color: PAL.ink, fontFamily: 'NotoSerifKR-Medium',
-  },
-  sectionCount: {
-    fontSize: 11, color: PAL.faint, letterSpacing: 0.5,
-  },
-  sectionSub: {
-    fontSize: 12, color: PAL.muted, marginBottom: 14,
-  },
   keywordsLabel: {
     fontSize: 12, color: PAL.muted,
     letterSpacing: 1.5, textTransform: 'uppercase',
@@ -297,8 +366,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'baseline',
   },
   keyword: {
-    letterSpacing: -0.2, lineHeight: 22,
-    padding: 4,
+    letterSpacing: -0.2, lineHeight: 22, padding: 4,
   },
   keywordCount: {
     fontSize: 10, color: PAL.amberDeep, fontWeight: '500',

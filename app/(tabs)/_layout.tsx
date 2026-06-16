@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { PAL } from '@/constants/palette';
 import { HomeIcon, ChartIcon, SearchIcon } from '@/components/Icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DevOverlay from '@/components/DevOverlay';
 
 function TabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -40,11 +41,14 @@ function TabBar({ state, descriptors, navigation }: any) {
 
 export default function TabsLayout() {
   return (
-    <Tabs tabBar={props => <TabBar {...props} />} screenOptions={{ headerShown: false }}>
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="weekly" />
-      <Tabs.Screen name="search" />
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      <Tabs tabBar={props => <TabBar {...props} />} screenOptions={{ headerShown: false }}>
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="weekly" />
+        <Tabs.Screen name="search" />
+      </Tabs>
+      <DevOverlay />
+    </View>
   );
 }
 

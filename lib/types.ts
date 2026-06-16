@@ -23,6 +23,13 @@ export interface PendingComment {
   notifId?: string; // expo-notifications scheduled notification ID
 }
 
+export interface PendingUserReply {
+  persona: PersonaKey;
+  scheduledAt: number;
+  userText: string;   // the user's message that triggered this reply
+  parentIdx: number;  // index of the top-level AI comment being replied to
+}
+
 export interface DiaryEntry {
   id: string;
   date: string; // 'YYYY.MM.DD'
@@ -32,6 +39,7 @@ export interface DiaryEntry {
   emotions: Emotion[];
   comments: AIComment[];
   pendingComments?: PendingComment[];
+  pendingUserReplies?: PendingUserReply[];
   energyScore?: number;
   createdAt: number;
 }
@@ -42,6 +50,7 @@ export interface WeeklySummary {
   subtitle: string;
   dateRange: string;
   comment: string;
+  letterPersona?: PersonaKey; // which persona wrote the weekly letter (v2+)
   keywords: { w: string; c: number }[];
   suggestions: {
     persona: PersonaKey;

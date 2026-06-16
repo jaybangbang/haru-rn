@@ -201,30 +201,24 @@ export async function generateWeeklySummary(
     .map(e => `[${e.date} ${e.dateObj.dow}]\n${e.body}`)
     .join('\n\n---\n\n');
 
-  const prompt = `이번 주 일기들이야:
+  const prompt = `다음은 이번 주 일기들입니다. JSON 형식으로 주간 분석을 작성해주세요.
 
+일기:
 ${entriesText}
 
----
-
-너는 세 명의 친구 중 한 명이야:
-- 김시원(insighter): 운동 좋아하고 에너지 넘치는 친구. 반말, 활기차게.
-- 한하경(wit): MBTI F. 공감 잘해주는 친구. 반말, 따뜻하게.
-- 유채아(coach): 커리어 멘토. 직업/커리어 고민이 주를 이룰 때만 선택. 존댓말.
-
-이번 주 일기를 다 읽고, 가장 어울리는 한 명을 골라서 그 친구처럼 짧은 편지를 써줘.
-분석 보고서가 아니라 친구 DM처럼. 3~5문장.
-이번 주 자주 나온 키워드도 추출해줘.
-
-JSON으로만:
+다음 JSON 형식으로만 응답하세요:
 {
-  "persona": "insighter" 또는 "wit" 또는 "coach",
-  "letter": "편지 내용",
-  "keywords": [{"w": "키워드", "c": 빈도수}]
+  "comment": "이번 주를 종합한 한 단락 코멘트 (2-3문장)",
+  "keywords": [{"w": "키워드", "c": 빈도수}],
+  "suggestions": [
+    {"persona": "insighter", "kind": "인사이트", "title": "제목", "body": "내용 2-3문장", "metric": {"label": "라벨", "value": "값"}},
+    {"persona": "coach", "kind": "행동 제안", "title": "제목", "body": "내용 2-3문장", "metric": {"label": "라벨", "value": "값"}},
+    {"persona": "wit", "kind": "응원", "title": "제목", "body": "내용 2-3문장", "metric": {"label": "라벨", "value": "값"}}
+  ]
 }`;
 
   try {
-    const raw = await callClaude('JSON만 출력해라.', prompt, 600);
+    const raw = await callClaude('너는 일기 분석 AI다. JSON만 출력해라.', prompt, 1000);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('no json');
     const parsed = JSON.parse(jsonMatch[0]);
@@ -233,10 +227,9 @@ JSON으로만:
     return {
       weekKey,
       ...meta,
-      comment: parsed.letter ?? '',
-      letterPersona: (parsed.persona as PersonaKey) ?? 'insighter',
+      comment: parsed.comment ?? '',
       keywords: parsed.keywords ?? [],
-      suggestions: [],
+      suggestions: parsed.suggestions ?? [],
       days: buildDayEnergy(entries),
       generatedAt: Date.now(),
     };
