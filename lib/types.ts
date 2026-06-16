@@ -9,10 +9,11 @@ export interface Emotion {
 
 export interface AIComment {
   persona: PersonaKey;
-  tag: string;
+  tag?: string;       // deprecated, kept for backward compat with stored entries
   text: string;
   createdAt: number;
-  replyTo?: number; // index into comments array at time of posting
+  replyTo?: number;   // index into comments array at time of posting
+  isUser?: boolean;   // true for user-authored replies
 }
 
 export interface PendingComment {

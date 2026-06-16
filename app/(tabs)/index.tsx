@@ -24,9 +24,9 @@ const PROMPTS = [
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 const PERSONA_META = {
-  insighter: { nameKo: '인사이터', color: '#1B173F', Icon: MagnifyIcon },
-  wit:       { nameKo: '유머',     color: '#D9914A', Icon: BoltIcon },
-  coach:     { nameKo: '코치',     color: '#7A8A66', Icon: CompassIcon },
+  insighter: { nameKo: '김시원', color: '#1B173F', Icon: MagnifyIcon },
+  wit:       { nameKo: '한하경', color: '#D9914A', Icon: BoltIcon },
+  coach:     { nameKo: '박서진', color: '#7A8A66', Icon: CompassIcon },
 } as const;
 
 function todayString() {
@@ -85,7 +85,7 @@ export default function HomeScreen() {
     const items: NotifItem[] = [];
     for (const entry of all) {
       entry.comments.forEach((c, idx) => {
-        items.push({ comment: c, entry, commentIdx: idx });
+        if (!c.isUser) items.push({ comment: c, entry, commentIdx: idx });
       });
     }
     items.sort((a, b) => b.comment.createdAt - a.comment.createdAt);
@@ -363,7 +363,6 @@ export default function HomeScreen() {
                     <View style={{ flex: 1, gap: 3 }}>
                       <View style={styles.notifMeta}>
                         <Text style={styles.notifName}>{meta?.nameKo ?? item.comment.persona}</Text>
-                        <Text style={styles.notifTag}>{item.comment.tag}</Text>
                         <Text style={styles.notifTime}>{timeAgo(item.comment.createdAt)}</Text>
                       </View>
                       <Text style={styles.notifText} numberOfLines={2}>{item.comment.text}</Text>

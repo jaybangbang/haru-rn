@@ -126,3 +126,10 @@ export const PersonIcon = ({ size = 22, color = 'currentColor' }: IconProps) => 
     <Circle cx="12" cy="7" r="4" />
   </Svg>
 );
+
+export const SendIcon = ({ size = 18, color = 'currentColor' }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M22 2L11 13" />
+    <Path d="M22 2L15 22 11 13 2 9l20-7z" />
+  </Svg>
+);

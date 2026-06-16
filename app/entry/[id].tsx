@@ -1,24 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Alert, Image,
+  TextInput, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, saveEntry, deleteEntry } from '@/lib/storage';
-import { generateSingleComment } from '@/lib/ai';
+import { generateSingleComment, generateUserReply } from '@/lib/ai';
 import { cancelNotification, notifyCommentReady } from '@/lib/notifications';
 import { PERSONAS as PERSONA_PROFILES } from '@/lib/personas';
 import EmotionPill from '@/components/EmotionPill';
 import {
-  ChevronLeftIcon, SparkleIcon, HeartIcon, CommentIcon, PenIcon,
+  ChevronLeftIcon, SparkleIcon, HeartIcon, CommentIcon, PenIcon, SendIcon, CloseIcon,
 } from '@/components/Icons';
 
 const PERSONA_META = {
-  insighter: { handle: '@siwon.ai',   accent: '#2D2A5C', tag: '패턴 발견',       likes: 12 },
-  wit:       { handle: '@hakyung.ai', accent: '#A86A2C', tag: '오늘의 위로',      likes: 34 },
-  coach:     { handle: '@seojin.ai',  accent: '#4A5A38', tag: '내일을 위한 제안', likes: 8  },
+  insighter: { handle: '@siwon',   accent: '#2D2A5C' },
+  wit:       { handle: '@hakyung', accent: '#A86A2C' },
+  coach:     { handle: '@seojin',  accent: '#4A5A38' },
 } as const;
 
 function timeAgo(ts: number): string {
@@ -45,7 +47,30 @@ export default function EntryDetailScreen() {
   const [entry, setEntry] = useState<DiaryEntry | null>(null);
   const [liked, setLiked] = useState<Record<number, boolean>>({});
   const [showMenu, setShowMenu] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<{ personaKey: PersonaKey; parentIdx: number } | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isReplying, setIsReplying] = useState(false);
   const isGenerating = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  // Persist likes per entry
+  const likesKey = `haru_likes_${id}`;
+
+  const loadLikes = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(likesKey);
+      if (raw) setLiked(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, [likesKey]);
+
+  const toggleLike = useCallback(async (idx: number) => {
+    setLiked(prev => {
+      const next = { ...prev, [idx]: !prev[idx] };
+      AsyncStorage.setItem(likesKey, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, [likesKey]);
 
   const checkAndGenerate = useCallback(async () => {
     if (isGenerating.current) return;
@@ -54,7 +79,6 @@ export default function EntryDetailScreen() {
     const e = all.find(x => x.id === id);
     if (!e) return;
 
-    // Always sync display from storage
     setEntry({ ...e });
 
     const pending = e.pendingComments ?? [];
@@ -68,14 +92,22 @@ export default function EntryDetailScreen() {
     for (const p of due) {
       try {
         const comment = await generateSingleComment(current, p.persona, current.comments);
-        // Cancel pre-scheduled notification and send immediate one with actual text
         if (p.notifId) await cancelNotification(p.notifId);
-        await notifyCommentReady(current.id, p.persona, comment.text);
-        current = {
-          ...current,
-          comments: [...current.comments, comment],
-          pendingComments: current.pendingComments!.filter(x => x.scheduledAt !== p.scheduledAt),
-        };
+
+        if (comment === null) {
+          // Persona chose to skip (e.g. 박서진 with no career content)
+          current = {
+            ...current,
+            pendingComments: current.pendingComments!.filter(x => x.scheduledAt !== p.scheduledAt),
+          };
+        } else {
+          await notifyCommentReady(current.id, p.persona, comment.text);
+          current = {
+            ...current,
+            comments: [...current.comments, comment],
+            pendingComments: current.pendingComments!.filter(x => x.scheduledAt !== p.scheduledAt),
+          };
+        }
         await saveEntry(current);
         setEntry({ ...current });
       } catch {
@@ -88,9 +120,10 @@ export default function EntryDetailScreen() {
 
   useEffect(() => {
     checkAndGenerate().catch(() => {});
+    loadLikes();
     const interval = setInterval(() => checkAndGenerate().catch(() => {}), 30_000);
     return () => clearInterval(interval);
-  }, [checkAndGenerate]);
+  }, [checkAndGenerate, loadLikes]);
 
   const handleDelete = () => {
     setShowMenu(false);
@@ -105,6 +138,62 @@ export default function EntryDetailScreen() {
     ]);
   };
 
+  const handleReplyPress = (personaKey: PersonaKey, parentIdx: number) => {
+    setReplyTarget({ personaKey, parentIdx });
+    setTimeout(() => {
+      inputRef.current?.focus();
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  const handleCancelReply = () => {
+    setReplyTarget(null);
+    setReplyText('');
+    Keyboard.dismiss();
+  };
+
+  const handleSubmitReply = async () => {
+    if (!replyTarget || !replyText.trim() || !entry || isReplying) return;
+
+    const text = replyText.trim();
+    setReplyText('');
+    setIsReplying(true);
+    Keyboard.dismiss();
+
+    // Add user comment
+    const userComment: AIComment = {
+      persona: replyTarget.personaKey,
+      isUser: true,
+      replyTo: replyTarget.parentIdx,
+      text,
+      createdAt: Date.now(),
+    };
+
+    const withUser = { ...entry, comments: [...entry.comments, userComment] };
+    setEntry(withUser);
+    await saveEntry(withUser);
+
+    // Generate AI response
+    try {
+      const threadHistory = withUser.comments.filter(
+        (c, i) => i === replyTarget.parentIdx || c.replyTo === replyTarget.parentIdx
+      );
+      const aiReply = await generateUserReply(
+        entry,
+        replyTarget.personaKey,
+        text,
+        threadHistory,
+      );
+      aiReply.replyTo = replyTarget.parentIdx;
+      const withAI = { ...withUser, comments: [...withUser.comments, aiReply] };
+      setEntry(withAI);
+      await saveEntry(withAI);
+    } catch { /* keep user comment, AI reply failed silently */ }
+
+    setReplyTarget(null);
+    setIsReplying(false);
+  };
+
   if (!entry) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -116,19 +205,25 @@ export default function EntryDetailScreen() {
   const pending = entry.pendingComments ?? [];
   const nextPending = pending.sort((a, b) => a.scheduledAt - b.scheduledAt)[0];
 
-  // Build flat list: each comment + its replies grouped under it
-  // Top-level: replyTo === undefined
+  // AI top-level comments (not user, no replyTo)
   const topLevel = entry.comments
     .map((c, i) => ({ ...c, _idx: i }))
-    .filter(c => c.replyTo === undefined);
-  const replies = entry.comments
+    .filter(c => !c.isUser && c.replyTo === undefined);
+
+  // All replies (AI or user)
+  const allReplies = entry.comments
     .map((c, i) => ({ ...c, _idx: i }))
     .filter(c => c.replyTo !== undefined);
 
   return (
-    <View style={{ flex: 1, backgroundColor: PAL.bg }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: PAL.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 12, paddingBottom: 60 }]}
+        ref={scrollRef}
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + 12, paddingBottom: 20 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Top bar */}
@@ -188,7 +283,7 @@ export default function EntryDetailScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <SparkleIcon size={12} color={PAL.amberDeep} />
-              <Text style={styles.statText}>AI {entry.comments.length}명이 읽음</Text>
+              <Text style={styles.statText}>AI {entry.comments.filter(c => !c.isUser).length}명이 읽음</Text>
             </View>
             <Text style={styles.dot}>·</Text>
             <Text style={styles.statText}>{entry.body.length}자</Text>
@@ -198,65 +293,51 @@ export default function EntryDetailScreen() {
         {/* Comments section */}
         <View style={styles.commentsSection}>
           <View style={styles.commentsHeader}>
-            <Text style={styles.commentsTitle}>댓글 {entry.comments.length}</Text>
+            <Text style={styles.commentsTitle}>댓글 {entry.comments.filter(c => !c.isUser).length}</Text>
             <Text style={styles.commentsSort}>최신순</Text>
           </View>
 
-          {entry.comments.length === 0 && !nextPending && (
+          {entry.comments.filter(c => !c.isUser).length === 0 && !nextPending && (
             <View style={styles.noComments}>
               <Text style={styles.noCommentsText}>아직 댓글이 없어요.</Text>
             </View>
           )}
 
-          {/* Render top-level comments and their replies */}
           {topLevel.map(c => {
-            const persona = PERSONA_PROFILES[c.persona as PersonaKey];
-            if (!persona) return null;
-            const myReplies = replies.filter(r => r.replyTo === c._idx);
+            const myReplies = allReplies.filter(r => r.replyTo === c._idx);
             return (
               <View key={c._idx}>
                 <CommentRow
-                  personaKey={c.persona as PersonaKey}
                   comment={c}
                   liked={!!liked[c._idx]}
-                  onLike={() => setLiked(l => ({ ...l, [c._idx]: !l[c._idx] }))}
+                  onLike={() => toggleLike(c._idx)}
+                  onReply={() => handleReplyPress(c.persona as PersonaKey, c._idx)}
                   timeAgoStr={timeAgo(c.createdAt)}
                   isReply={false}
                 />
-                {myReplies.map(r => {
-                  const rPersona = PERSONA_PROFILES[r.persona as PersonaKey];
-                  if (!rPersona) return null;
-                  return (
+                {myReplies.map(r => (
+                  r.isUser ? (
+                    <UserCommentRow
+                      key={r._idx}
+                      comment={r}
+                      timeAgoStr={timeAgo(r.createdAt)}
+                    />
+                  ) : (
                     <CommentRow
                       key={r._idx}
-                      personaKey={r.persona as PersonaKey}
                       comment={r}
                       liked={!!liked[r._idx]}
-                      onLike={() => setLiked(l => ({ ...l, [r._idx]: !l[r._idx] }))}
+                      onLike={() => toggleLike(r._idx)}
+                      onReply={() => handleReplyPress(r.persona as PersonaKey, c._idx)}
                       timeAgoStr={timeAgo(r.createdAt)}
                       isReply
-                      replyToName={PERSONA_PROFILES[c.persona as PersonaKey]?.name}
+                      replyToName={r.isUser ? '나' : PERSONA_PROFILES[c.persona as PersonaKey]?.name}
                     />
-                  );
-                })}
+                  )
+                ))}
               </View>
             );
           })}
-
-          {/* Orphan replies (replyTo points to a non-top-level comment) */}
-          {replies
-            .filter(r => topLevel.every(t => t._idx !== r.replyTo))
-            .map(r => (
-              <CommentRow
-                key={r._idx}
-                personaKey={r.persona as PersonaKey}
-                comment={r}
-                liked={!!liked[r._idx]}
-                onLike={() => setLiked(l => ({ ...l, [r._idx]: !l[r._idx] }))}
-                timeAgoStr={timeAgo(r.createdAt)}
-                isReply={false}
-              />
-            ))}
 
           {/* Upcoming comment indicator */}
           {nextPending && (
@@ -268,35 +349,75 @@ export default function EntryDetailScreen() {
               </Text>
             </View>
           )}
-        </View>
 
-        {/* Reply composer */}
-        <View style={styles.replyBox}>
+          {isReplying && (
+            <View style={styles.pendingRow}>
+              <View style={[styles.pendingDot, { backgroundColor: replyTarget ? PERSONA_META[replyTarget.personaKey]?.accent : PAL.muted }]} />
+              <Text style={styles.pendingText}>
+                {replyTarget ? PERSONA_PROFILES[replyTarget.personaKey]?.name : 'AI'}가 답글 쓰는 중…
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Fixed reply box */}
+      <View style={[styles.replyBox, { paddingBottom: insets.bottom + 8 }]}>
+        {replyTarget && (
+          <View style={styles.replyTargetBar}>
+            <Text style={[styles.replyTargetText, { color: PERSONA_META[replyTarget.personaKey]?.accent }]}>
+              @ {PERSONA_PROFILES[replyTarget.personaKey]?.name}에게 답글
+            </Text>
+            <Pressable onPress={handleCancelReply} hitSlop={8}>
+              <CloseIcon size={14} color={PAL.muted} />
+            </Pressable>
+          </View>
+        )}
+        <View style={styles.replyInputRow}>
           <View style={styles.replyAvatar}>
             <Text style={styles.replyAvatarText}>나</Text>
           </View>
-          <Text style={styles.replyPlaceholder}>AI에게 한 줄 더 물어보기…</Text>
+          <TextInput
+            ref={inputRef}
+            style={styles.replyInput}
+            placeholder={replyTarget ? '답글 쓰기…' : '답글 달 AI의 댓글을 탭하세요'}
+            placeholderTextColor={PAL.faint}
+            value={replyText}
+            onChangeText={setReplyText}
+            multiline
+            editable={!!replyTarget}
+            onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          />
+          <Pressable
+            onPress={handleSubmitReply}
+            disabled={!replyTarget || !replyText.trim() || isReplying}
+            style={[styles.sendBtn, { opacity: replyTarget && replyText.trim() ? 1 : 0.3 }]}
+          >
+            <SendIcon size={16} color={replyTarget ? (PERSONA_META[replyTarget.personaKey]?.accent ?? PAL.indigo) : PAL.muted} />
+          </Pressable>
         </View>
-      </ScrollView>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 function CommentRow({
-  personaKey, comment, liked, onLike, timeAgoStr, isReply, replyToName,
+  comment, liked, onLike, onReply, timeAgoStr, isReply, replyToName,
 }: {
-  personaKey: PersonaKey;
   comment: AIComment & { _idx: number };
   liked: boolean;
   onLike: () => void;
+  onReply: () => void;
   timeAgoStr: string;
   isReply: boolean;
   replyToName?: string;
 }) {
+  const personaKey = comment.persona as PersonaKey;
   const profile = PERSONA_PROFILES[personaKey];
   const meta = PERSONA_META[personaKey];
-  const tagBg = meta.accent + '1F';
   const avatarSize = isReply ? 28 : 36;
+
+  if (!profile || !meta) return null;
 
   return (
     <View style={[styles.commentRow, isReply && styles.commentRowReply]}>
@@ -313,24 +434,40 @@ function CommentRow({
           <Text style={styles.commentName}>{profile.name}</Text>
           <Text style={[styles.commentHandle, { color: meta.accent }]}>{meta.handle}</Text>
           <Text style={styles.commentTime}>· {timeAgoStr}</Text>
-          <View style={{ flex: 1 }} />
-          <View style={[styles.commentTag, { backgroundColor: tagBg }]}>
-            <Text style={[styles.commentTagText, { color: meta.accent }]}>{comment.tag}</Text>
-          </View>
         </View>
         <Text style={styles.commentText}>{comment.text}</Text>
         <View style={styles.commentActions}>
           <Pressable onPress={onLike} style={styles.actionBtn}>
             <HeartIcon size={13} color={liked ? PAL.red : PAL.muted} filled={liked} />
-            <Text style={[styles.actionText, { color: liked ? PAL.red : PAL.muted }]}>
-              {meta.likes + (liked ? 1 : 0)}
-            </Text>
           </Pressable>
-          <Pressable style={styles.actionBtn}>
+          <Pressable onPress={onReply} style={styles.actionBtn}>
             <CommentIcon size={12} color={PAL.muted} />
             <Text style={styles.actionText}>답글</Text>
           </Pressable>
         </View>
+      </View>
+    </View>
+  );
+}
+
+function UserCommentRow({
+  comment, timeAgoStr,
+}: {
+  comment: AIComment & { _idx: number };
+  timeAgoStr: string;
+}) {
+  return (
+    <View style={[styles.commentRow, styles.commentRowReply, styles.userCommentRow]}>
+      <View style={styles.replyConnector} />
+      <View style={styles.userAvatar}>
+        <Text style={styles.userAvatarText}>나</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.commentMeta}>
+          <Text style={styles.commentName}>나</Text>
+          <Text style={styles.commentTime}>· {timeAgoStr}</Text>
+        </View>
+        <Text style={styles.commentText}>{comment.text}</Text>
       </View>
     </View>
   );
@@ -356,14 +493,8 @@ const styles = StyleSheet.create({
     fontFamily: 'NotoSerifKR-Regular',
   },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  editBtn: {
-    width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  moreBtn: {
-    width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  editBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  moreBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   menuOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100,
   },
@@ -377,12 +508,9 @@ const styles = StyleSheet.create({
   menuItem: { paddingVertical: 13, paddingHorizontal: 18 },
   menuItemTextDanger: { fontSize: 15, color: PAL.red, fontWeight: '500' },
   postCard: {
-    marginHorizontal: 20,
-    marginTop: 8,
+    marginHorizontal: 20, marginTop: 8,
     backgroundColor: PAL.paper,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: PAL.lineSoft,
+    borderRadius: 20, borderWidth: 1, borderColor: PAL.lineSoft,
     overflow: 'hidden',
   },
   postHeader: {
@@ -418,16 +546,14 @@ const styles = StyleSheet.create({
   commentsSection: { paddingHorizontal: 20, marginTop: 24 },
   commentsHeader: {
     flexDirection: 'row', alignItems: 'baseline',
-    justifyContent: 'space-between', marginBottom: 14,
-    paddingHorizontal: 4,
+    justifyContent: 'space-between', marginBottom: 14, paddingHorizontal: 4,
   },
   commentsTitle: {
     fontSize: 17, fontWeight: '500',
     color: PAL.ink, fontFamily: 'NotoSerifKR-Medium',
   },
   commentsSort: {
-    fontSize: 11, color: PAL.muted, letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    fontSize: 11, color: PAL.muted, letterSpacing: 0.6, textTransform: 'uppercase',
   },
   noComments: { paddingVertical: 24, alignItems: 'center' },
   noCommentsText: { fontSize: 14, color: PAL.muted, textAlign: 'center', lineHeight: 22 },
@@ -439,26 +565,25 @@ const styles = StyleSheet.create({
   commentRowReply: {
     paddingLeft: 28,
     backgroundColor: PAL.paper + '80',
-    borderRadius: 12,
-    marginTop: 2,
+    borderRadius: 12, marginTop: 2, marginBottom: 4,
     borderBottomWidth: 0,
-    marginBottom: 4,
+  },
+  userCommentRow: {
+    backgroundColor: PAL.indigoDeep + '0C',
   },
   replyConnector: {
-    position: 'absolute',
-    left: 14, top: 0, bottom: 0,
-    width: 1.5,
-    backgroundColor: PAL.lineSoft,
+    position: 'absolute', left: 14, top: 0, bottom: 0,
+    width: 1.5, backgroundColor: PAL.lineSoft,
   },
-  commentAvatar: {
-    width: 38, height: 38, borderRadius: 19,
+  commentAvatar: { flexShrink: 0 },
+  userAvatar: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: PAL.indigoDeep,
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  commentAvatarSmall: { width: 28, height: 28, borderRadius: 14 },
-  replyToLabel: {
-    fontSize: 11, color: PAL.muted, marginBottom: 4, letterSpacing: 0.2,
-  },
+  userAvatarText: { color: PAL.bg, fontSize: 11, fontWeight: '500' },
+  replyToLabel: { fontSize: 11, color: PAL.muted, marginBottom: 4, letterSpacing: 0.2 },
   commentMeta: {
     flexDirection: 'row', alignItems: 'baseline',
     gap: 4, flexWrap: 'wrap', marginBottom: 6,
@@ -466,32 +591,36 @@ const styles = StyleSheet.create({
   commentName: { fontSize: 13.5, fontWeight: '600', color: PAL.ink },
   commentHandle: { fontSize: 11.5, fontWeight: '500', letterSpacing: 0.2 },
   commentTime: { fontSize: 11, color: PAL.faint },
-  commentTag: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 },
-  commentTagText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   commentText: {
     fontFamily: 'NotoSerifKR-Regular',
     fontSize: 14.5, lineHeight: 24,
     color: PAL.ink, letterSpacing: -0.1,
   },
-  commentActions: {
-    marginTop: 9, flexDirection: 'row', gap: 16, alignItems: 'center',
-  },
+  commentActions: { marginTop: 9, flexDirection: 'row', gap: 16, alignItems: 'center' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionText: { fontSize: 11.5, color: PAL.muted },
   pendingRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 14, paddingHorizontal: 4,
   },
-  pendingDot: {
-    width: 6, height: 6, borderRadius: 3, opacity: 0.6,
-  },
+  pendingDot: { width: 6, height: 6, borderRadius: 3, opacity: 0.6 },
   pendingText: { fontSize: 12.5, color: PAL.muted },
   pendingTime: { color: PAL.faint },
+  // Reply box (fixed bottom)
   replyBox: {
-    marginHorizontal: 20, marginTop: 18,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 11, paddingHorizontal: 14,
     backgroundColor: PAL.paper,
+    borderTopWidth: 1, borderTopColor: PAL.lineSoft,
+    paddingHorizontal: 16, paddingTop: 10,
+  },
+  replyTargetBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 6, paddingHorizontal: 2,
+  },
+  replyTargetText: { fontSize: 11.5, fontWeight: '600', letterSpacing: 0.2 },
+  replyInputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 8, paddingHorizontal: 12,
+    backgroundColor: PAL.bg,
     borderRadius: 999, borderWidth: 1, borderColor: PAL.line,
   },
   replyAvatar: {
@@ -500,5 +629,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   replyAvatarText: { color: PAL.bg, fontSize: 11, fontWeight: '500' },
-  replyPlaceholder: { flex: 1, fontSize: 13, color: PAL.faint },
+  replyInput: {
+    flex: 1, fontSize: 13, color: PAL.ink,
+    maxHeight: 80, paddingVertical: 0,
+  },
+  sendBtn: { padding: 4 },
 });
