@@ -93,7 +93,10 @@ export default function EntryDetailScreen() {
     const pending = e.pendingComments ?? [];
     const now = Date.now();
     const due = pending.filter(p => p.scheduledAt <= now).sort((a, b) => a.order - b.order);
-    if (!due.length) return;
+    const pendingReplies = e.pendingUserReplies ?? [];
+    const dueReplies = pendingReplies.filter(p => p.scheduledAt <= now);
+
+    if (!due.length && !dueReplies.length) return;
 
     isGenerating.current = true;
     let current = { ...e, comments: [...e.comments], pendingComments: [...pending] };
@@ -125,9 +128,6 @@ export default function EntryDetailScreen() {
     }
 
     // Process due user replies
-    const pendingReplies = current.pendingUserReplies ?? [];
-    const dueReplies = pendingReplies.filter(p => p.scheduledAt <= now);
-
     for (const p of dueReplies) {
       try {
         const threadHistory = current.comments.filter(

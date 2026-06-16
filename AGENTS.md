@@ -4,7 +4,9 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 # 프로젝트 개요
 
-AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(insighter/wit/coach)가 순차적으로 댓글을 답니다.
+AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(insighter/wit/coach)가 순차적으로 댓글을 달고, 유저 답글에도 딜레이 후 응답합니다.
+
+**페르소나:** 김시원(@siwon.ai, insighter) / 한하경(@hakyung.ai, wit) / 유채아(@chaea.ai, coach)
 
 **Bundle ID:** com.sigcrew.haru  
 **Apple Team:** SIG Inc. (867RGMZD7Y)  
@@ -14,7 +16,7 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 - **스토리지:** Supabase `haru` 스키마 — `entries`, `weekly_summaries`, `last_read` 테이블
 - **인증:** Supabase Auth — 앱 시작 시 자동 익명 로그인, 나중에 Apple/Google/이메일로 업그레이드
-- **AI 호출:** `lib/ai.ts` — fetch로 `api.anthropic.com/v1/messages` 직접 호출 (claude-haiku-4-5-20251001)
+- **AI 호출:** `haru-api` (별도 Vercel 배포) → Anthropic `claude-sonnet-4-6`
 - **알림:** `lib/notifications.ts` — expo-notifications 로컬 푸시 (APNs 원격 아님)
 - **댓글 폴링:** `app/entry/[id].tsx` — 30초마다 pendingComments 확인 후 생성
 
@@ -37,6 +39,22 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 3. 시간 된 댓글은 이전 댓글 컨텍스트 포함해서 Claude 호출 → JSON `{replyTo, text}` 응답
 4. 생성 완료 → 예약 알림 취소 + 즉시 알림 발송
 5. **수정된 일기는 AI 댓글 재생성 안 함** (기존 comments/pendingComments 그대로 유지)
+
+# 유저 답글 딜레이 (PendingUserReply)
+
+유저가 AI 댓글에 답글 달면 즉시 응답하지 않고 딜레이 후 응답:
+- wit: 1~60분
+- insighter: 60~480분  
+- coach: 1~480분
+
+`PendingUserReply` 타입으로 DiaryEntry에 저장, `checkAndGenerate()` 폴링에서 처리.
+
+# 주간 요약 v2
+
+- 조건: 첫 일기 createdAt 기준 7일 후
+- 형식: 3명 중 1명 선택 → 편지 형식 (`letterPersona`, `letter` 필드)
+- `lib/ai_weekly_v1.ts`: 이전 3카드 구조 백업 (필요 시 참고)
+- `__DEV__` QA 버튼으로 7일 게이트 우회 가능
 
 # Xcode 빌드 주의사항
 
