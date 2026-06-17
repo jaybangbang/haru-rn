@@ -11,6 +11,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.sigcrew.haru",
       "buildNumber": "20",
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
