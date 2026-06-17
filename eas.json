@@ -16,10 +16,7 @@
       }
     },
     "production": {
-      "autoIncrement": true,
-      "ios": {
-        "scheme": "Haru"
-      }
+      "autoIncrement": true
     }
   },
   "submit": {

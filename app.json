@@ -26,7 +26,6 @@
       "bundler": "metro"
     },
     "plugins": [
-      ["./plugins/withRenameXcodeProject", { "projectName": "Haru" }],
       "expo-router",
       "expo-font",
       [
