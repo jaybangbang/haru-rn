@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
-  Modal, FlatList, SafeAreaView,
+  Modal, FlatList, SafeAreaView, Linking,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,7 +11,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, formatDate, getLastReadAt, setLastReadAt } from '@/lib/storage';
-import { cancelDailyDiaryReminder } from '@/lib/notifications';
+import { cancelDailyDiaryReminder, scheduleDailyDiaryReminder } from '@/lib/notifications';
 import EntryCard from '@/components/EntryCard';
 import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
 
@@ -27,7 +27,7 @@ const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 const PERSONA_META = {
   insighter: { nameKo: '김시원', color: '#1B173F', Icon: MagnifyIcon },
   wit:       { nameKo: '한하경', color: '#D9914A', Icon: BoltIcon },
-  coach:     { nameKo: '박서진', color: '#7A8A66', Icon: CompassIcon },
+  coach:     { nameKo: '유채아', color: '#7A8A66', Icon: CompassIcon },
 } as const;
 
 function todayString() {
@@ -67,6 +67,9 @@ export default function HomeScreen() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(true);
+  const [notifTime, setNotifTime] = useState<Date | null>(null);
+  const [pendingNotifTime, setPendingNotifTime] = useState<Date | null>(null);
+  const [showNotifPicker, setShowNotifPicker] = useState(false);
 
   const todayStr = formatDate(new Date());
   const selectedStr = formatDate(selectedDate);
@@ -95,6 +98,17 @@ export default function HomeScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  useEffect(() => {
+    if (!showAccountModal) return;
+    AsyncStorage.getItem('haru_notif_time').then(raw => {
+      if (!raw) return;
+      const [h, m] = raw.split(':').map(Number);
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      setNotifTime(d);
+    });
+  }, [showAccountModal]);
 
   useEffect(() => {
     const t = setInterval(() => setPromptIdx(i => (i + 1) % PROMPTS.length), 4200);
@@ -245,12 +259,84 @@ export default function HomeScreen() {
               <Text style={styles.panelClose}>닫기</Text>
             </Pressable>
           </View>
-          <View style={styles.accountBody}>
-            <View style={styles.accountAvatarLarge}>
-              <Text style={styles.accountAvatarText}>{(userEmail?.[0] ?? '?').toUpperCase()}</Text>
+          <ScrollView contentContainerStyle={styles.accountScroll}>
+            {/* Avatar */}
+            <View style={styles.accountAvatarSection}>
+              <View style={styles.accountAvatarLarge}>
+                <Text style={styles.accountAvatarText}>{(userEmail?.[0] ?? '?').toUpperCase()}</Text>
+              </View>
+              <Text style={styles.accountEmail}>{userEmail ?? '—'}</Text>
             </View>
-            <Text style={styles.accountEmail}>{userEmail ?? '—'}</Text>
-          </View>
+
+            {/* Settings */}
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionLabel}>설정</Text>
+
+              {/* Notification time */}
+              <Pressable
+                style={styles.settingsRow}
+                onPress={() => {
+                  setPendingNotifTime(notifTime);
+                  setShowNotifPicker(v => !v);
+                }}
+              >
+                <Text style={styles.settingsRowIcon}>🔔</Text>
+                <Text style={styles.settingsRowLabel}>알림 시간</Text>
+                <View style={styles.settingsRowRight}>
+                  <View style={styles.dailyTag}><Text style={styles.dailyTagText}>매일</Text></View>
+                  <Text style={styles.settingsRowValue}>
+                    {notifTime
+                      ? notifTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true })
+                      : '설정 안 됨'}
+                  </Text>
+                </View>
+              </Pressable>
+              {showNotifPicker && (
+                <View>
+                  <DateTimePicker
+                    value={pendingNotifTime ?? notifTime ?? new Date()}
+                    mode="time"
+                    display="spinner"
+                    locale="ko-KR"
+                    style={{ backgroundColor: PAL.bg }}
+                    onChange={(_, date) => { if (date) setPendingNotifTime(date); }}
+                  />
+                  <Pressable
+                    style={styles.notifConfirmBtn}
+                    onPress={async () => {
+                      const date = pendingNotifTime ?? notifTime;
+                      if (!date) return;
+                      const h = date.getHours();
+                      const m = date.getMinutes();
+                      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                      await AsyncStorage.setItem('haru_notif_time', timeStr);
+                      await scheduleDailyDiaryReminder(h, m);
+                      setNotifTime(date);
+                      setShowNotifPicker(false);
+                    }}
+                  >
+                    <Text style={styles.notifConfirmBtnText}>확인</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Web CTA */}
+              <View style={styles.settingsRow}>
+                <Text style={styles.settingsRowIcon}>💻</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingsRowLabel}>웹에서도 작성할 수 있어요</Text>
+                  <Text style={styles.settingsRowSub}>입력할 게 많을 땐 PC로 작성해보세요</Text>
+                </View>
+                <Pressable
+                  style={styles.settingsRowBtn}
+                  onPress={() => Linking.openURL('https://haru-web-ten.vercel.app')}
+                >
+                  <Text style={styles.settingsRowBtnText}>열기</Text>
+                </Pressable>
+              </View>
+            </View>
+          </ScrollView>
+
           <Pressable
             style={styles.logoutBtn}
             onPress={async () => {
@@ -427,7 +513,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: PAL.lineSoft,
   },
   accountTitle: { fontSize: 17, fontWeight: '600', color: PAL.ink, fontFamily: 'NotoSerifKR-Medium' },
-  accountBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  accountScroll: { paddingBottom: 16 },
+  accountAvatarSection: { alignItems: 'center', paddingVertical: 32, gap: 10 },
   accountAvatarLarge: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: PAL.indigoDeep,
@@ -435,8 +522,47 @@ const styles = StyleSheet.create({
   },
   accountAvatarText: { color: PAL.bg, fontSize: 28, fontWeight: '600' },
   accountEmail: { fontSize: 15, color: PAL.muted },
+  settingsSection: {
+    marginHorizontal: 20,
+    backgroundColor: PAL.paper,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    overflow: 'hidden',
+  },
+  settingsSectionLabel: {
+    fontSize: 11, color: PAL.muted, letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8,
+  },
+  settingsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    gap: 12,
+    borderTopWidth: 1, borderTopColor: PAL.lineSoft,
+  },
+  settingsRowIcon: { fontSize: 16 },
+  settingsRowLabel: { flex: 1, fontSize: 15, color: PAL.ink },
+  settingsRowSub: { fontSize: 11.5, color: PAL.muted, marginTop: 2 },
+  settingsRowValue: { fontSize: 14, color: PAL.muted },
+  settingsRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dailyTag: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: PAL.indigoDeep + '18',
+    borderRadius: 999,
+  },
+  dailyTagText: { fontSize: 11, color: PAL.indigoDeep, fontWeight: '600' },
+  notifConfirmBtn: {
+    marginHorizontal: 16, marginBottom: 14, paddingVertical: 12,
+    backgroundColor: PAL.indigoDeep, borderRadius: 12, alignItems: 'center',
+  },
+  notifConfirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  settingsRowBtn: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: PAL.indigoDeep, borderRadius: 999,
+  },
+  settingsRowBtnText: { fontSize: 13, color: PAL.bg, fontWeight: '600' },
   logoutBtn: {
-    margin: 24, padding: 16, borderRadius: 14,
+    margin: 20, marginTop: 16, padding: 16, borderRadius: 14,
     backgroundColor: PAL.paper,
     borderWidth: 1, borderColor: PAL.line,
     alignItems: 'center',

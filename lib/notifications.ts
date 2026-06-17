@@ -5,10 +5,17 @@ import { PersonaKey } from './types';
 const DAILY_NOTIF_ID_KEY = 'haru_daily_notif_id';
 
 const PERSONA_NAMES: Record<PersonaKey, string> = {
-  insighter: '인사이터',
-  wit: '유머',
-  coach: '코치',
+  insighter: '김시원',
+  wit: '한하경',
+  coach: '유채아',
 };
+
+function getNotifContent(hour: number): { title: string; body: string } {
+  if (hour >= 5 && hour < 11)  return { title: '좋은 아침이에요', body: '오늘 하루 어떻게 시작할 것 같아요?' };
+  if (hour >= 11 && hour < 15) return { title: '오전은 어땠어요?', body: '잠깐 틈 내서 기록해봐요' };
+  if (hour >= 15 && hour < 21) return { title: '오늘 하루 수고했어요', body: '퇴근하면서 일기 한 줄 써볼까요?' };
+  return { title: '하루 마무리할 시간이에요', body: '오늘 기억하고 싶은 순간이 있나요?' };
+}
 
 // Call once at app startup
 export function configureNotifications() {
@@ -83,8 +90,7 @@ export async function scheduleDailyDiaryReminder(hour: number, minute: number): 
   try {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '오늘 하루 어땠어요?',
-        body: '잠깐 일기를 써보는 건 어때요?',
+        ...getNotifContent(hour),
         sound: true,
       },
       trigger: {

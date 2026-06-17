@@ -13,67 +13,28 @@ async function callClaude(system: string, user: string, maxTokens = 300): Promis
   return data.text ?? '';
 }
 
+async function callClaudePersona(
+  persona: PersonaKey,
+  promptType: 'diary' | 'reply',
+  user: string,
+  maxTokens = 300
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/comment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ persona, promptType, user, maxTokens }),
+  });
+  if (!res.ok) throw new Error(`api error ${res.status}`);
+  const data = await res.json();
+  return data.text ?? '';
+}
+
 const PERSONA_NAMES: Record<PersonaKey, string> = {
   insighter: '김시원',
   wit: '한하경',
   coach: '유채아',
 };
 
-// Prompts for reading diary entries and posting initial comments
-const DIARY_PROMPTS: Record<PersonaKey, string> = {
-  insighter: `너는 김시원이야. 운동 좋아하고 에너지 넘치는 친구. 항상 긍정적인데 억지스럽진 않아. "그래도 넌 할 수 있어!" 같은 클리셰는 안 하고, 힘든 상황도 가볍게 받아치거나 같이 웃어주는 스타일. 가끔 자연스럽게 운동이나 몸 얘기가 묻어나와도 됨. 친구가 쓴 일기를 읽고 친구처럼 반응해줘.
-
-규칙:
-- 반말. 활기차게.
-- 동기부여 멘트나 설교 금지. 그냥 친구처럼.
-- 유머는 가볍고 무해하게. 공격적·자극적·폭력적 표현 절대 금지.
-- 1~2문장.`,
-
-  wit: `너는 한하경이야. MBTI F인 친구. 공감을 잘해주고, 친구가 어떤 상태든 "이대로도 괜찮아"라고 느끼게 해주는 사람. 일기를 읽고 있는 그대로 받아줘.
-
-규칙:
-- 반말. 따뜻하게.
-- 감정에 집중해. 분석이나 조언 말고 "그랬구나", "나도 그런 거 알아" 같은 반응.
-- 억지로 위로하거나 희망적인 말 끼워 넣지 마. 그냥 곁에 있어줘.
-- 1~2문장.`,
-
-  coach: `너는 유채아야. 직업/커리어 관련 고민이 있을 때만 말하는 멘토. 존댓말을 씀.
-
-규칙:
-- 일기에 직업, 일, 커리어, 직장, 사업, 목표, 성과, 프로젝트, 팀, 고객 관련 고민이 **명확하게** 나타날 때만 댓글을 달아.
-- 그런 내용이 없으면 반드시 {"skip": true}로만 응답해.
-- 댓글을 달 땐 존댓말로. 구체적인 행동이나 관점 하나만 짚어줘.
-- 2문장 이하.
-
-JSON으로만 응답: {"skip": true} 또는 {"replyTo": null 또는 숫자, "text": "내용"}`,
-};
-
-// Prompts for replying to user messages in a conversation thread
-const REPLY_PROMPTS: Record<PersonaKey, string> = {
-  insighter: `너는 김시원이야. 운동 좋아하고 에너지 넘치는 친구. 친구가 너한테 직접 말을 걸어온 상황이야.
-
-규칙:
-- 반말. 활기차게.
-- 친구가 한 말에 직접 반응해. 긍정적이되 억지 응원은 하지 마.
-- 유머는 가볍고 무해하게. 공격적·자극적·폭력적 표현 절대 금지.
-- 1~2문장.`,
-
-  wit: `너는 한하경이야. MBTI F인 친구. 친구가 직접 말을 걸어온 상황이야.
-
-규칙:
-- 반말. 따뜻하게.
-- 친구가 한 말에 공감하면서 반응해줘.
-- 판단하거나 조언하지 마. 그냥 들어줘.
-- 1~2문장.`,
-
-  coach: `너는 유채아야. 직업/커리어 멘토. 유저가 직접 질문해온 상황이야.
-
-규칙:
-- 존댓말.
-- 유저가 한 말에 직접 답해줘.
-- 직업/커리어와 무관한 질문이면 "그 부분은 제 전문 영역은 아니지만"으로 시작해서 짧게 답해.
-- 2문장 이하.`,
-};
 
 // Schedule 3 pending comments with staggered random delays.
 // First: 1–10 min. Subsequent: 2–10 min after previous.
@@ -112,15 +73,13 @@ export async function generateSingleComment(
     }
   }
 
-  const prompt = DIARY_PROMPTS[persona];
   const isCoach = persona === 'coach';
-
   const userMsg = isCoach
     ? `${diaryBlock}${previousBlock}`
     : `${diaryBlock}${previousBlock}\n\nJSON으로만 응답: {"replyTo": null 또는 숫자, "text": "내용"}`;
 
   try {
-    const raw = await callClaude(prompt, userMsg, 300);
+    const raw = await callClaudePersona(persona, 'diary', userMsg, 300);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -165,7 +124,7 @@ export async function generateUserReply(
   const userMsg = `일기 요약: ${entry.preview}\n\n대화 맥락:\n${contextLines}\n\n유저: ${userMessage}`;
 
   try {
-    const raw = await callClaude(REPLY_PROMPTS[persona], userMsg, 200);
+    const raw = await callClaudePersona(persona, 'reply', userMsg, 200);
     const text = raw.replace(/\{[\s\S]*\}/g, '').trim() || raw.trim();
     if (text) return { persona, text, createdAt: Date.now() };
   } catch {
@@ -208,8 +167,8 @@ ${entriesText}
 ---
 
 너는 세 명의 친구 중 한 명이야:
-- 김시원(insighter): 운동 좋아하고 에너지 넘치는 친구. 반말, 활기차게.
-- 한하경(wit): MBTI F. 공감 잘해주는 친구. 반말, 따뜻하게.
+- 김시원(insighter): 성장욕구 강하고 활기 넘치는 친구. 반말.
+- 한하경(wit): 항상 내 편. 인간적인 면모를 발견하고 소중히 여겨주는 친구. 반말, 따뜻하게.
 - 유채아(coach): 커리어 멘토. 직업/커리어 고민이 주를 이룰 때만 선택. 존댓말.
 
 이번 주 일기를 다 읽고, 가장 어울리는 한 명을 골라서 그 친구처럼 짧은 편지를 써줘.

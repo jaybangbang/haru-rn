@@ -13,16 +13,21 @@ const STORAGE_KEY = 'haru_qa_checked';
 const CHECKLIST = [
   { id: 'build',    label: '빌드 최신 여부 확인 (마운트 시각 체크)' },
   { id: 'logout',   label: '로그아웃 → 온보딩 화면으로 이동' },
-  { id: 'onboard1', label: '온보딩: 페르소나 3장 스와이프' },
-  { id: 'onboard2', label: '온보딩: 알림 시간 선택 슬라이드 (4번째)' },
+  { id: 'onboard1', label: '온보딩: 페르소나 3장 소개 (avatarRow)' },
+  { id: 'onboard2', label: '온보딩: 알림 시간 선택 (4개 옵션)' },
   { id: 'onboard3', label: '온보딩: "알림 없이 할게요" 스킵 작동' },
+  { id: 'notif1',   label: '계정 모달: 현재 알림 시간 표시' },
+  { id: 'notif2',   label: '계정 모달: 알림 시간 변경 → 재스케줄 확인' },
+  { id: 'notif3',   label: '알림 발신자 이름: 김시원 / 한하경 / 유채아' },
+  { id: 'notif4',   label: '알림 문구: 아침/점심/저녁/밤 타이밍별 다름' },
+  { id: 'web1',     label: '계정 모달: 웹 작성 안내 + 열기 버튼' },
   { id: 'handle',   label: '댓글 핸들 @siwon.ai / @hakyung.ai / @chaea.ai' },
-  { id: 'chaea',    label: '유채아 프로필 사진 표시' },
-  { id: 'siwon',    label: '김시원 톤: 에너지 넘치는 친구 느낌' },
+  { id: 'tone1',    label: '김시원: 존댓말, 성장지향, ㅋㅋ/ㄹㅇ 없음' },
+  { id: 'tone2',    label: '한하경: 존댓말, 인간적인 면모 알아봐줌' },
   { id: 'delay',    label: '유저 답글 → AI 즉시 안 달고 딜레이 있음' },
-  { id: 'weekly1',  label: '주간탭: 7일 미만 → 대기 화면 + QA 버튼' },
-  { id: 'weekly2',  label: '주간탭: QA 버튼 → 1명 페르소나 편지 형식' },
-  { id: 'weekly3',  label: '주간탭: 페르소나 아바타 + 이름 표시' },
+  { id: 'weekly1',  label: '주간탭: 편지형/카드형 토글 작동' },
+  { id: 'weekly2',  label: '주간탭: 카드형(v1) → 3개 페르소나 카드 생성' },
+  { id: 'weekly3',  label: '주간탭: 편지형(v2) → 1명 페르소나 편지' },
 ];
 
 export default function DevOverlay() {
