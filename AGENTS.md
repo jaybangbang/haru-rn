@@ -49,12 +49,20 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 `PendingUserReply` 타입으로 DiaryEntry에 저장, `checkAndGenerate()` 폴링에서 처리.
 
-# 주간 요약 v2
+# 주간 요약 v3 (현재)
 
-- 조건: 첫 일기 createdAt 기준 7일 후
-- 형식: 3명 중 1명 선택 → 편지 형식 (`letterPersona`, `letter` 필드)
-- `lib/ai_weekly_v1.ts`: 이전 3카드 구조 백업 (필요 시 참고)
-- `__DEV__` QA 버튼으로 7일 게이트 우회 가능
+- 조건: 첫 일기 createdAt 기준 7일 후 자동 생성 (`loadData`에서 처리)
+- 형식: AI 리포트 — 핵심 사건 / 반복 패턴 / 미결 질문 / 제언 (페르소나 없음)
+- 생성: `lib/ai_weekly_v3.ts` → `generateWeeklySummaryV3()` → `/api/comment` (maxTokens: 2000)
+- 저장 키: `weekKey + '_v3'`
+- 화면 순서: 스트리크 → 감정에너지 → 키워드 → 리포트 섹션
+- `__DEV__` "리포트 즉시 생성" 버튼으로 7일 게이트 우회 가능
+
+## 주간 요약 백업 코드 (롤백용)
+
+- `lib/ai.ts` → `generateWeeklySummary()`: v2 편지형 (페르소나 1명이 DM 편지)
+- `lib/ai_weekly_v1.ts` → `generateWeeklySummaryV1()`: v1 카드형 (3개 인사이트 카드)
+- `app/(tabs)/weekly.tsx`에 v1/v2 컴포넌트(LetterCard, SuggestionCard, VersionToggle) 및 상태변수 보존됨
 
 # Xcode 빌드 주의사항
 
@@ -62,32 +70,17 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 - `plugins/withRenameXcodeProject.js` 플러그인이 prebuild 시 자동으로 Haru.xcodeproj로 rename
 - `use_modular_headers!` 도 플러그인이 Podfile에 자동 추가 (GoogleSignIn Swift pod 필요)
 - Google Sign-In: iOS client ID는 auth.tsx + Info.plist URL scheme 둘 다 필요
-- EAS 7월 1일까지 사용 불가 → 로컬 Xcode 아카이브로 IPA 뽑기
+# 배포 (EAS Build)
 
-# 로컬 IPA 뽑는 법 (EAS 대신)
+EAS 유료 플랜 사용 가능. 빌드 + TestFlight 자동 제출:
 
 ```bash
-# 1. prebuild
-rm -rf ios && npx expo prebuild --platform ios
-
-# 2. archive
-xcodebuild -workspace ios/Haru.xcworkspace \
-  -scheme Haru -configuration Release \
-  -destination generic/platform=iOS \
-  -archivePath /tmp/Haru.xcarchive \
-  archive -allowProvisioningUpdates \
-  CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=867RGMZD7Y
-
-# 3. IPA export
-xcodebuild -exportArchive \
-  -archivePath /tmp/Haru.xcarchive \
-  -exportPath /tmp/HaruExport \
-  -exportOptionsPlist /tmp/ExportOptions.plist \
-  -allowProvisioningUpdates
-
-# ExportOptions.plist: method=app-store-connect, teamID=867RGMZD7Y
-# IPA 경로: /tmp/HaruExport/app.ipa → Transporter로 업로드
+eas build --platform ios --profile production --auto-submit --non-interactive
 ```
+
+- `eas.json` production 프로파일: `autoIncrement: true` (빌드번호 EAS가 자동 관리)
+- `appVersionSource: "remote"` → app.json buildNumber 수동 변경 불필요
+- submit 설정: `appleId: terra586@gmail.com`, `ascAppId: 6780211212`
 
 # 환경 변수
 

@@ -61,4 +61,10 @@ export interface WeeklySummary {
   }[];
   days: { d: string; v: number }[];
   generatedAt: number;
+  // v3: report type
+  reportHeadline?: string;
+  reportHeadlineBody?: string;
+  reportPatterns?: { title: string; body: string }[];
+  reportOpenQuestion?: string;
+  reportSuggestions?: { title: string; body: string }[];
 }

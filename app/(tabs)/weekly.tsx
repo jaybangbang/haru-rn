@@ -11,6 +11,8 @@ import {
   loadEntries, loadWeeklySummary, saveWeeklySummary, getWeekKey,
 } from '@/lib/storage';
 import { generateWeeklySummary } from '@/lib/ai';
+import { generateWeeklySummary as generateWeeklySummaryV1 } from '@/lib/ai_weekly_v1';
+import { generateWeeklySummaryV3 } from '@/lib/ai_weekly_v3';
 import { scheduleWeeklySummaryNotification } from '@/lib/notifications';
 import { PERSONAS } from '@/lib/personas';
 import StreakCard from '@/components/StreakCard';
@@ -42,6 +44,11 @@ export default function WeeklyScreen() {
   const [loading, setLoading] = useState(false);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [qaLoading, setQaLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'v2' | 'v1' | 'v3'>('v2');
+  const [summaryV1, setSummaryV1] = useState<WeeklySummary | null>(null);
+  const [loadingV1, setLoadingV1] = useState(false);
+  const [summaryV3, setSummaryV3] = useState<WeeklySummary | null>(null);
+  const [loadingV3, setLoadingV3] = useState(false);
   const weekKey = getWeekKey();
 
   const loadData = useCallback(async () => {
@@ -66,9 +73,9 @@ export default function WeeklyScreen() {
 
     setDaysLeft(null);
 
-    const cached = await loadWeeklySummary(weekKey);
+    const cached = await loadWeeklySummary(weekKey + '_v3');
     if (cached) {
-      setSummary(cached);
+      setSummaryV3(cached);
       return;
     }
 
@@ -79,9 +86,9 @@ export default function WeeklyScreen() {
 
     setLoading(true);
     try {
-      const s = await generateWeeklySummary(thisWeek, weekKey);
+      const s = await generateWeeklySummaryV3(thisWeek, weekKey + '_v3');
       await saveWeeklySummary(s);
-      setSummary(s);
+      setSummaryV3(s);
     } finally {
       setLoading(false);
     }
@@ -89,12 +96,44 @@ export default function WeeklyScreen() {
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
+  const handleTabChange = async (tab: 'v2' | 'v1' | 'v3') => {
+    setActiveTab(tab);
+    if (tab === 'v1' && !summaryV1 && daysLeft === null) {
+      const cached = await loadWeeklySummary(weekKey + '_v1');
+      if (cached) { setSummaryV1(cached); return; }
+      setLoadingV1(true);
+      try {
+        const thisWeek = entries.filter(e => getWeekKey(new Date(e.createdAt)) === weekKey);
+        const src = thisWeek.length > 0 ? thisWeek : entries;
+        const s = await generateWeeklySummaryV1(src, weekKey + '_v1');
+        await saveWeeklySummary(s);
+        setSummaryV1(s);
+      } finally {
+        setLoadingV1(false);
+      }
+    }
+    if (tab === 'v3' && !summaryV3 && daysLeft === null) {
+      const cached = await loadWeeklySummary(weekKey + '_v3');
+      if (cached) { setSummaryV3(cached); return; }
+      setLoadingV3(true);
+      try {
+        const thisWeek = entries.filter(e => getWeekKey(new Date(e.createdAt)) === weekKey);
+        const src = thisWeek.length > 0 ? thisWeek : entries;
+        const s = await generateWeeklySummaryV3(src, weekKey + '_v3');
+        await saveWeeklySummary(s);
+        setSummaryV3(s);
+      } finally {
+        setLoadingV3(false);
+      }
+    }
+  };
+
   const streak = getStreakData(entries);
-  const avgEnergy = summary
-    ? (summary.days.reduce((s, d) => s + d.v, 0) / Math.max(1, summary.days.filter(d => d.v > 0).length)).toFixed(1)
+  const avgEnergy = summaryV3
+    ? (summaryV3.days.reduce((s, d) => s + d.v, 0) / Math.max(1, summaryV3.days.filter(d => d.v > 0).length)).toFixed(1)
     : '0.0';
 
-  if (loading && !summary) {
+  if (loading && !summaryV3) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={PAL.amber} />
@@ -111,9 +150,34 @@ export default function WeeklyScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.headerLabel}>WEEKLY · 주간</Text>
-        <Text style={styles.headerTitle}>{summary?.title ?? '주간 요약'} — {summary?.subtitle ?? '나의 한 주'}</Text>
-        <Text style={styles.headerSub}>{summary?.dateRange ?? '로드 중…'}</Text>
+        <Text style={styles.headerTitle}>{summaryV3?.title ?? '주간 요약'} — {summaryV3?.subtitle ?? '나의 한 주'}</Text>
+        <Text style={styles.headerSub}>{summaryV3?.dateRange ?? '로드 중…'}</Text>
       </View>
+
+      {/* DEV: 즉시 생성 버튼 */}
+      {__DEV__ && (
+        <View style={styles.devSection}>
+          <Text style={styles.devLabel}>🛠 DEV</Text>
+          <View style={styles.devRow}>
+            <Pressable
+              style={[styles.devBtn, loadingV3 && { opacity: 0.5 }]}
+              disabled={loadingV3}
+              onPress={async () => {
+                setLoadingV3(true);
+                try {
+                  const src = entries.length > 0 ? entries.slice(0, 7) : [];
+                  const s = await generateWeeklySummaryV3(src, weekKey + '_v3_qa');
+                  await saveWeeklySummary(s);
+                  setSummaryV3(s);
+                  setDaysLeft(null);
+                } finally { setLoadingV3(false); }
+              }}
+            >
+              <Text style={styles.devBtnText}>{loadingV3 ? '생성 중…' : '리포트 즉시 생성'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <StreakCard streak={streak} />
 
@@ -127,59 +191,168 @@ export default function WeeklyScreen() {
           <Text style={styles.waitBody}>
             일기를 쓰기 시작한 지 일주일이 지나면{'\n'}친구들이 한 주를 돌아봐 줄 거예요
           </Text>
-          {__DEV__ && (
-            <Pressable
-              style={[styles.qaBtn, qaLoading && { opacity: 0.5 }]}
-              disabled={qaLoading}
-              onPress={async () => {
-                setQaLoading(true);
-                try {
-                  const all = await loadEntries();
-                  const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                  const recent = all.filter(e => e.createdAt >= since);
-                  const s = await generateWeeklySummary(recent.length > 0 ? recent : all.slice(0, 7), weekKey + '_qa');
-                  setSummary(s);
-                  setDaysLeft(null);
-                } finally {
-                  setQaLoading(false);
-                }
-              }}
-            >
-              <Text style={styles.qaBtnText}>
-                {qaLoading ? '생성 중…' : '🛠 QA: 주간 요약 미리보기'}
-              </Text>
-            </Pressable>
-          )}
         </View>
       )}
 
-      {/* Chart */}
-      {summary && (
+      {/* 감정 에너지 차트 */}
+      {summaryV3 && (
         <View style={styles.chartCard}>
           <View style={styles.chartHeader}>
             <Text style={styles.chartLabel}>감정 에너지</Text>
             <Text style={styles.chartLabel}>평균 {avgEnergy} / 10</Text>
           </View>
-          <EnergyChart days={summary.days} />
+          <EnergyChart days={summaryV3.days} />
         </View>
       )}
 
-      {/* Persona letter */}
-      {summary?.comment ? (
-        <LetterCard
-          persona={summary.letterPersona ?? 'insighter'}
-          text={summary.comment}
-        />
-      ) : null}
-
-      {/* Keywords */}
-      {summary && summary.keywords.length > 0 && (
+      {/* 키워드 */}
+      {summaryV3 && summaryV3.keywords.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.keywordsLabel}>이번 주 키워드</Text>
-          <KeywordCloud keywords={summary.keywords} />
+          <KeywordCloud keywords={summaryV3.keywords} />
         </View>
       )}
+
+      {/* 리포트 로딩 */}
+      {loadingV3 && (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={PAL.amber} />
+          <Text style={styles.loadingText}>이번 주를 분석하는 중이에요…</Text>
+        </View>
+      )}
+
+      {/* 리포트 섹션 */}
+      {summaryV3 && (
+        <>
+          {summaryV3.reportHeadline ? (
+            <ReportHeadlineCard
+              headline={summaryV3.reportHeadline}
+              body={summaryV3.reportHeadlineBody ?? ''}
+            />
+          ) : null}
+          {summaryV3.reportPatterns && summaryV3.reportPatterns.length > 0 && (
+            <ReportPatternList patterns={summaryV3.reportPatterns} />
+          )}
+          {summaryV3.reportOpenQuestion ? (
+            <ReportOpenQuestionCard question={summaryV3.reportOpenQuestion} />
+          ) : null}
+          {summaryV3.reportSuggestions && summaryV3.reportSuggestions.length > 0 && (
+            <ReportSuggestionList suggestions={summaryV3.reportSuggestions} />
+          )}
+        </>
+      )}
+
     </ScrollView>
+  );
+}
+
+function VersionToggle({ active, onChange }: { active: 'v2' | 'v1' | 'v3'; onChange: (v: 'v2' | 'v1' | 'v3') => void }) {
+  return (
+    <View style={styles.toggleWrap}>
+      <View style={styles.toggle}>
+        <Pressable
+          onPress={() => onChange('v2')}
+          style={[styles.toggleBtn, active === 'v2' && styles.toggleBtnActive]}
+        >
+          <Text style={[styles.toggleLabel, active === 'v2' && styles.toggleLabelActive]}>
+            편지형
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onChange('v1')}
+          style={[styles.toggleBtn, active === 'v1' && styles.toggleBtnActive]}
+        >
+          <Text style={[styles.toggleLabel, active === 'v1' && styles.toggleLabelActive]}>
+            카드형
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onChange('v3')}
+          style={[styles.toggleBtn, active === 'v3' && styles.toggleBtnActive]}
+        >
+          <Text style={[styles.toggleLabel, active === 'v3' && styles.toggleLabelActive]}>
+            리포트형
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function ReportHeadlineCard({ headline, body }: { headline: string; body: string }) {
+  return (
+    <View style={styles.reportHeadlineCard}>
+      <Text style={styles.reportSectionLabel}>이번 주의 핵심 사건</Text>
+      <Text style={styles.reportHeadline}>{headline}</Text>
+      {body ? <Text style={styles.reportBody}>{body}</Text> : null}
+    </View>
+  );
+}
+
+function ReportPatternList({ patterns }: { patterns: { title: string; body: string }[] }) {
+  const nums = ['①', '②', '③', '④'];
+  return (
+    <View style={styles.reportSection}>
+      <Text style={styles.reportSectionLabel}>반복되는 패턴</Text>
+      {patterns.map((p, i) => (
+        <View key={i} style={styles.reportItem}>
+          <Text style={styles.reportItemNum}>{nums[i] ?? `${i + 1}.`}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reportItemTitle}>{p.title}</Text>
+            {p.body ? <Text style={styles.reportItemBody}>{p.body}</Text> : null}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ReportOpenQuestionCard({ question }: { question: string }) {
+  return (
+    <View style={styles.reportQuestionCard}>
+      <Text style={styles.reportSectionLabel}>가장 중요한 미결 질문</Text>
+      <Text style={styles.reportQuestion}>{question}</Text>
+    </View>
+  );
+}
+
+function ReportSuggestionList({ suggestions }: { suggestions: { title: string; body: string }[] }) {
+  const nums = ['①', '②', '③', '④'];
+  return (
+    <View style={styles.reportSection}>
+      <Text style={styles.reportSectionLabel}>제언</Text>
+      {suggestions.map((s, i) => (
+        <View key={i} style={styles.reportItem}>
+          <Text style={styles.reportItemNum}>{nums[i] ?? `${i + 1}.`}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reportItemTitle}>{s.title}</Text>
+            {s.body ? <Text style={styles.reportItemBody}>{s.body}</Text> : null}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SuggestionCard({ item }: { item: WeeklySummary['suggestions'][number] }) {
+  const p = PERSONAS[item.persona];
+  return (
+    <View style={[styles.suggCard, { borderLeftColor: p.color }]}>
+      <View style={styles.suggHeader}>
+        <Image source={p.image} style={styles.suggAvatar} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.suggKind, { color: p.color }]}>{item.kind}</Text>
+          <Text style={styles.suggTitle}>{item.title}</Text>
+        </View>
+        {item.metric && (
+          <View style={styles.suggMetricBox}>
+            <Text style={styles.suggMetricValue}>{item.metric.value}</Text>
+            <Text style={styles.suggMetricLabel}>{item.metric.label}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.suggBody}>{item.body}</Text>
+    </View>
   );
 }
 
@@ -371,4 +544,145 @@ const styles = StyleSheet.create({
   keywordCount: {
     fontSize: 10, color: PAL.amberDeep, fontWeight: '500',
   },
+  toggleWrap: {
+    paddingHorizontal: 20, marginTop: 16, marginBottom: 4,
+  },
+  toggle: {
+    flexDirection: 'row',
+    backgroundColor: PAL.paper,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    padding: 3,
+  },
+  toggleBtn: {
+    flex: 1, paddingVertical: 8,
+    borderRadius: 10, alignItems: 'center',
+  },
+  toggleBtnActive: {
+    backgroundColor: PAL.indigoDeep,
+  },
+  toggleLabel: {
+    fontSize: 13, fontWeight: '500', color: PAL.muted,
+  },
+  toggleLabelActive: {
+    color: '#F5DCB6',
+  },
+  v1CommentCard: {
+    marginHorizontal: 20, marginTop: 18,
+    padding: 20, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+  },
+  v1CommentLabel: {
+    fontSize: 11, color: PAL.muted, letterSpacing: 1.2,
+    textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular',
+    marginBottom: 10,
+  },
+  v1CommentText: {
+    fontFamily: 'NotoSerifKR-Regular',
+    fontSize: 14.5, lineHeight: 26,
+    color: PAL.ink, letterSpacing: -0.1,
+  },
+  suggCard: {
+    backgroundColor: PAL.paper,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    borderLeftWidth: 4,
+    padding: 16, marginBottom: 12,
+  },
+  suggHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 10, marginBottom: 10,
+  },
+  suggAvatar: {
+    width: 34, height: 34, borderRadius: 17,
+  },
+  suggKind: {
+    fontSize: 10.5, fontWeight: '600',
+    letterSpacing: 0.8, textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  suggTitle: {
+    fontSize: 14, fontWeight: '600',
+    color: PAL.ink, fontFamily: 'NotoSerifKR-Medium',
+  },
+  suggMetricBox: {
+    alignItems: 'flex-end',
+    paddingLeft: 8,
+  },
+  suggMetricValue: {
+    fontSize: 16, fontWeight: '700', color: PAL.indigoDeep,
+  },
+  suggMetricLabel: {
+    fontSize: 10, color: PAL.muted, marginTop: 1,
+  },
+  suggBody: {
+    fontSize: 13.5, lineHeight: 22,
+    color: PAL.ink, fontFamily: 'NotoSerifKR-Regular',
+  },
+  reportHeadlineCard: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 20, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+  },
+  reportSection: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 20, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    gap: 14,
+  },
+  reportQuestionCard: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 20, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1.5, borderColor: PAL.amber,
+  },
+  reportSectionLabel: {
+    fontSize: 11, color: PAL.muted, letterSpacing: 1.2,
+    textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular',
+    marginBottom: 10,
+  },
+  reportHeadline: {
+    fontSize: 16, fontWeight: '700', color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Medium', letterSpacing: -0.2,
+    marginBottom: 8,
+  },
+  reportBody: {
+    fontSize: 14, lineHeight: 24, color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Regular', letterSpacing: -0.1,
+  },
+  reportQuestion: {
+    fontSize: 15, fontWeight: '600', color: PAL.amberDeep,
+    fontFamily: 'NotoSerifKR-Medium', lineHeight: 24, letterSpacing: -0.2,
+  },
+  reportItem: {
+    flexDirection: 'row', gap: 10, alignItems: 'flex-start',
+  },
+  reportItemNum: {
+    fontSize: 15, color: PAL.indigoDeep, fontWeight: '700',
+    marginTop: 1, flexShrink: 0,
+  },
+  reportItemTitle: {
+    fontSize: 14, fontWeight: '600', color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Medium', marginBottom: 4, letterSpacing: -0.1,
+  },
+  reportItemBody: {
+    fontSize: 13.5, lineHeight: 22, color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Regular',
+  },
+  devSection: {
+    marginHorizontal: 20, marginTop: 28,
+    padding: 16, borderRadius: 14,
+    backgroundColor: '#2D2A5C11',
+    borderWidth: 1, borderColor: '#2D2A5C22',
+  },
+  devLabel: { fontSize: 11, color: PAL.indigoDeep, fontWeight: '700', marginBottom: 10 },
+  devRow: { flexDirection: 'row', gap: 8 },
+  devBtn: {
+    flex: 1, paddingVertical: 10, alignItems: 'center',
+    backgroundColor: PAL.indigoDeep, borderRadius: 10,
+  },
+  devBtnText: { fontSize: 12, color: '#F5DCB6', fontWeight: '600' },
 });

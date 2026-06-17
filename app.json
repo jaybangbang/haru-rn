@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sigcrew.haru",
-      "buildNumber": "17",
+      "buildNumber": "20",
       "xcodeProjectName": "Haru",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
