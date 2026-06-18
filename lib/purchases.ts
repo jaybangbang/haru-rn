@@ -1,8 +1,8 @@
 import Purchases, { LOG_LEVEL, CustomerInfo } from 'react-native-purchases';
 
 export const PRODUCT_IDS = {
-  monthly: 'com.sigcrew.haru.monthly',
-  yearly: 'com.sigcrew.haru.yearly',
+  monthly: 'ing.perpetual.app.premium.monthly',
+  yearly: 'ing.perpetual.app.premium.yearly',
 };
 
 const ENTITLEMENT_ID = 'premium';

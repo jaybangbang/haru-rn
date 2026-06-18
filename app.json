@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "하루",
-    "slug": "haru-rn",
+    "name": "Perpetual",
+    "slug": "perpetual",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "haru",
+    "scheme": "perpetual",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sigcrew.haru",
-      "buildNumber": "20",
+      "bundleIdentifier": "ing.perpetual.app",
+      "buildNumber": "1",
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"]
       },
@@ -23,7 +23,7 @@
         "backgroundColor": "#F6EFE2",
         "foregroundImage": "./assets/icon.png"
       },
-      "package": "com.sigcrew.haru"
+      "package": "ing.perpetual.app"
     },
     "web": {
       "bundler": "metro"

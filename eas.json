@@ -22,8 +22,7 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "terra586@gmail.com",
-        "ascAppId": "6780211212"
+        "appleId": "terra586@gmail.com"
       }
     }
   }

@@ -8,9 +8,9 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 **페르소나:** 김시원(@siwon.ai, insighter) / 한하경(@hakyung.ai, wit) / 유채아(@chaea.ai, coach)
 
-**Bundle ID:** com.sigcrew.haru  
+**Bundle ID:** ing.perpetual.app  
 **Apple Team:** SIG Inc. (867RGMZD7Y)  
-**ASC App ID:** 6780211212
+**ASC App ID:** (신규 앱 — App Store Connect에서 생성 후 eas.json에 추가 필요)
 
 # 핵심 아키텍처
 
@@ -66,10 +66,11 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 # Xcode 빌드 주의사항
 
-- `npx expo prebuild --platform ios` 는 항상 `app.xcodeproj` 를 생성함
-- `plugins/withRenameXcodeProject.js` 플러그인이 prebuild 시 자동으로 Haru.xcodeproj로 rename
-- `use_modular_headers!` 도 플러그인이 Podfile에 자동 추가 (GoogleSignIn Swift pod 필요)
+- `npx expo prebuild --platform ios` 는 항상 `app.xcodeproj` / `app.xcworkspace` 생성 (EAS 표준)
+- `withRenameXcodeProject` 플러그인은 **EAS managed 빌드와 호환 안 됨** — EAS가 `app.xcworkspace` 고정 탐색하므로 rename 플러그인 사용 금지
+- `plugins/withModularHeaders.js` — Podfile에 `use_modular_headers!` 추가 (GoogleSignIn Swift pod 필요, rename 플러그인 없이 독립 동작)
 - Google Sign-In: iOS client ID는 auth.tsx + Info.plist URL scheme 둘 다 필요
+
 # 배포 (EAS Build)
 
 EAS 유료 플랜 사용 가능. 빌드 + TestFlight 자동 제출:
@@ -80,7 +81,15 @@ eas build --platform ios --profile production --auto-submit --non-interactive
 
 - `eas.json` production 프로파일: `autoIncrement: true` (빌드번호 EAS가 자동 관리)
 - `appVersionSource: "remote"` → app.json buildNumber 수동 변경 불필요
-- submit 설정: `appleId: terra586@gmail.com`, `ascAppId: 6780211212`
+- submit 설정: `appleId: terra586@gmail.com` (ascAppId는 ASC에서 신규 앱 생성 후 추가)
+
+## Provisioning Profile 주의사항
+
+- `app.json ios.entitlements`에 필요한 entitlement 명시 필수 (EAS가 자동 감지 안 함)
+  - Sign In with Apple: `"com.apple.developer.applesignin": ["Default"]`
+- 새 capability 추가 후 첫 빌드 시 provisioning profile 재생성 필요:
+  1. `eas credentials --platform ios` → production → All → provisioning profile 재생성
+  2. non-interactive 모드에서는 재생성 불가 (Apple Developer Portal 인증 필요)
 
 # 환경 변수
 
