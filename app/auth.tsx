@@ -9,6 +9,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PAL } from '@/constants/palette';
 import { supabase } from '@/lib/supabase';
+import { migrateAnonymousData } from '@/lib/auth';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -17,17 +18,6 @@ GoogleSignin.configure({
 
 const SOURCE_APP = 'haru';
 
-// 익명 유저로 저장된 데이터를 새 계정으로 이전
-async function migrateAnonymousData(oldUserId: string) {
-  const { data: { user: newUser } } = await supabase.auth.getUser();
-  if (!newUser || newUser.id === oldUserId) return;
-  // RPC로 entries/weekly_summaries/last_read의 user_id를 일괄 교체
-  await supabase.rpc('migrate_user_data', {
-    old_user_id: oldUserId,
-    new_user_id: newUser.id,
-  });
-}
-
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<'main' | 'email'>('main');
@@ -35,7 +25,15 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const finish = () => router.replace('/(tabs)');
+  const finish = (oldId: string | null) => {
+    if (oldId) {
+      // 신규 가입: 결제 화면으로 (데이터 이전은 결제 후)
+      router.replace({ pathname: '/paywall' as any, params: { oldId } });
+    } else {
+      // 기존 계정 재로그인: 바로 홈
+      router.replace('/(tabs)');
+    }
+  };
 
   const signInWithApple = async () => {
     try {
@@ -55,8 +53,7 @@ export default function AuthScreen() {
       });
       if (error) throw error;
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      if (oldId) await migrateAnonymousData(oldId);
-      finish();
+      finish(oldId);
     } catch (e: any) {
       if (e.code !== 'ERR_REQUEST_CANCELED') Alert.alert('오류', e.message);
     } finally {
@@ -78,8 +75,7 @@ export default function AuthScreen() {
       });
       if (error) throw error;
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      if (oldId) await migrateAnonymousData(oldId);
-      finish();
+      finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -100,9 +96,8 @@ export default function AuthScreen() {
         options: { data: { source_app: SOURCE_APP } },
       });
       if (error) throw error;
-      if (oldId) await migrateAnonymousData(oldId);
       Alert.alert('확인 이메일을 보냈어요', '이메일을 확인하고 인증을 완료해주세요.');
-      finish();
+      finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -121,8 +116,7 @@ export default function AuthScreen() {
         email: email.trim(), password,
       });
       if (error) throw error;
-      if (oldId) await migrateAnonymousData(oldId);
-      finish();
+      finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {

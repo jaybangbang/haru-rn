@@ -15,3 +15,12 @@ export async function ensureAuth(): Promise<string> {
   if (!user) throw new Error('auth failed: no user after sign in');
   return user.id;
 }
+
+export async function migrateAnonymousData(oldUserId: string): Promise<void> {
+  const { data: { user: newUser } } = await supabase.auth.getUser();
+  if (!newUser || newUser.id === oldUserId) return;
+  await supabase.rpc('migrate_user_data', {
+    old_user_id: oldUserId,
+    new_user_id: newUser.id,
+  });
+}

@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import {
   NotoSerifKR_400Regular,
   NotoSerifKR_500Medium,
@@ -15,6 +16,9 @@ import {
   NotoSansKR_600SemiBold,
 } from '@expo-google-fonts/noto-sans-kr';
 import { configureNotifications, requestNotificationPermissions, restoreDailyDiaryReminder } from '@/lib/notifications';
+import { loadEntries, formatDate } from '@/lib/storage';
+import { ToastHost } from '@/components/Toast';
+import { initPurchases } from '@/lib/purchases';
 
 SplashScreen.preventAutoHideAsync();
 configureNotifications();
@@ -30,6 +34,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!loaded) return;
+    initPurchases();
     (async () => {
       await SplashScreen.hideAsync();
       requestNotificationPermissions();
@@ -41,9 +46,25 @@ export default function RootLayout() {
 
   // Navigate to entry when user taps a notification
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+    const sub = Notifications.addNotificationResponseReceivedListener(async response => {
       const entryId = response.notification.request.content.data?.entryId as string | undefined;
-      if (entryId) router.push(`/entry/${entryId}`);
+      if (entryId) {
+        router.push(`/entry/${entryId}`);
+        return;
+      }
+      // 일별 리마인더 탭 — 오늘 일기가 있으면 해당 일기로, 없으면 작성 화면으로
+      try {
+        const todayStr = formatDate(new Date());
+        const entries = await loadEntries();
+        const todayEntry = entries.find(e => e.date === todayStr);
+        if (todayEntry) {
+          router.push(`/entry/${todayEntry.id}`);
+        } else {
+          router.push('/write');
+        }
+      } catch {
+        router.push('/write');
+      }
     });
     return () => sub.remove();
   }, []);
@@ -51,7 +72,7 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -82,7 +103,16 @@ export default function RootLayout() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="paywall"
+          options={{
+            presentation: 'fullScreenModal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
       </Stack>
-    </>
+      <ToastHost />
+    </View>
   );
 }

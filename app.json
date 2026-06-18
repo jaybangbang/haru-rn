@@ -30,6 +30,7 @@
     },
     "plugins": [
       "./plugins/withModularHeaders",
+      "react-native-purchases",
       "expo-router",
       "expo-font",
       [

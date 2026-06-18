@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, Image, Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { PAL } from '@/constants/palette';
 import { DiaryEntry, PersonaKey, WeeklySummary } from '@/lib/types';
@@ -16,6 +16,7 @@ import { generateWeeklySummaryV3 } from '@/lib/ai_weekly_v3';
 import { scheduleWeeklySummaryNotification } from '@/lib/notifications';
 import { PERSONAS } from '@/lib/personas';
 import StreakCard from '@/components/StreakCard';
+import { supabase } from '@/lib/supabase';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,8 +29,10 @@ function getStreakData(entries: DiaryEntry[]) {
     const dateStr = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
     history.push(entries.some(e => e.date === dateStr));
   }
+  let startIdx = history.length - 1;
+  if (!history[startIdx]) startIdx--;
   let current = 0;
-  for (let i = history.length - 1; i >= 0; i--) {
+  for (let i = startIdx; i >= 0; i--) {
     if (history[i]) current++;
     else break;
   }
@@ -49,11 +52,16 @@ export default function WeeklyScreen() {
   const [loadingV1, setLoadingV1] = useState(false);
   const [summaryV3, setSummaryV3] = useState<WeeklySummary | null>(null);
   const [loadingV3, setLoadingV3] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(true);
   const weekKey = getWeekKey();
 
   const loadData = useCallback(async () => {
-    const all = await loadEntries();
+    const [all, { data: { user } }] = await Promise.all([
+      loadEntries(),
+      supabase.auth.getUser(),
+    ]);
     setEntries(all);
+    setIsAnonymous(user?.is_anonymous ?? true);
 
     if (all.length === 0) {
       setDaysLeft(7);
@@ -151,7 +159,9 @@ export default function WeeklyScreen() {
       <View style={styles.header}>
         <Text style={styles.headerLabel}>WEEKLY · 주간</Text>
         <Text style={styles.headerTitle}>{summaryV3?.title ?? '주간 요약'} — {summaryV3?.subtitle ?? '나의 한 주'}</Text>
-        <Text style={styles.headerSub}>{summaryV3?.dateRange ?? '로드 중…'}</Text>
+        {summaryV3?.dateRange ? (
+          <Text style={styles.headerSub}>{summaryV3.dateRange}</Text>
+        ) : null}
       </View>
 
       {/* DEV: 즉시 생성 버튼 */}
@@ -240,6 +250,18 @@ export default function WeeklyScreen() {
             <ReportSuggestionList suggestions={summaryV3.reportSuggestions} />
           )}
         </>
+      )}
+
+      {/* 프리미엄 배너 — 익명 유저에게만 표시 */}
+      {isAnonymous && (
+        <Pressable style={styles.premiumBanner} onPress={() => router.push('/auth')}>
+          <Text style={styles.premiumBannerIcon}>☁️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.premiumBannerText}>일기를 안전하게 백업하고 싶다면</Text>
+            <Text style={styles.premiumBannerSub}>프리미엄으로 클라우드 + 웹 작성</Text>
+          </View>
+          <Text style={styles.premiumBannerArrow}>›</Text>
+        </Pressable>
       )}
 
     </ScrollView>
@@ -685,4 +707,15 @@ const styles = StyleSheet.create({
     backgroundColor: PAL.indigoDeep, borderRadius: 10,
   },
   devBtnText: { fontSize: 12, color: '#F5DCB6', fontWeight: '600' },
+  premiumBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    marginHorizontal: 20, marginTop: 24, marginBottom: 8,
+    padding: 18, borderRadius: 16,
+    backgroundColor: PAL.paper,
+    borderWidth: 1.5, borderColor: PAL.amberDeep + '55',
+  },
+  premiumBannerIcon: { fontSize: 24 },
+  premiumBannerText: { fontSize: 14, fontWeight: '600', color: PAL.ink },
+  premiumBannerSub: { fontSize: 12, color: PAL.muted, marginTop: 3 },
+  premiumBannerArrow: { fontSize: 22, color: PAL.amberDeep, fontWeight: '300' },
 });

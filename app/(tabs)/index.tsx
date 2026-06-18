@@ -3,8 +3,9 @@ import {
   View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
   Modal, FlatList, SafeAreaView, Linking,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import CalendarPicker from '@/components/CalendarPicker';
 import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -63,7 +64,6 @@ export default function HomeScreen() {
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
-  const [showAuthBanner, setShowAuthBanner] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(true);
@@ -180,24 +180,20 @@ export default function HomeScreen() {
 
         {/* Today / Selected date */}
         <View style={styles.section}>
-          <Pressable onPress={() => setShowPicker(v => !v)} style={styles.sectionLabelRow}>
-            <Text style={styles.sectionLabel}>
+          <Pressable onPress={() => setShowPicker(v => !v)} style={styles.dateSelectorBtn}>
+            <Text style={styles.dateSelectorText}>
               {isToday
                 ? `TODAY · ${selectedDate.getMonth() + 1}.${selectedDate.getDate()}`
                 : `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 · 과거 일기`}
             </Text>
-            <Text style={styles.sectionLabelCaret}>{showPicker ? '▲' : '▽'}</Text>
+            <Text style={styles.dateSelectorCaret}>{showPicker ? '▲' : '▽'}</Text>
           </Pressable>
 
           {showPicker && (
-            <DateTimePicker
-              value={selectedDate}
-              mode="date"
-              display="spinner"
-              maximumDate={new Date()}
-              locale="ko-KR"
-              onChange={(_, date) => { if (date) setSelectedDate(date); }}
-              style={{ backgroundColor: PAL.bg }}
+            <CalendarPicker
+              selectedDate={selectedDate}
+              entryDates={new Set(entries.map(e => e.date))}
+              onSelect={(date) => { setSelectedDate(date); setShowPicker(false); }}
             />
           )}
 
@@ -352,64 +348,6 @@ export default function HomeScreen() {
           >
             <Text style={styles.logoutBtnText}>로그아웃</Text>
           </Pressable>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Auth full-screen prompt */}
-      <Modal visible={showAuthBanner} animationType="slide" presentationStyle="fullScreen">
-        <SafeAreaView style={styles.authModal}>
-          <View style={styles.authModalInner}>
-            {/* Top graphic */}
-            <View style={styles.authIconCircle}>
-              <Text style={{ fontSize: 36 }}>📖</Text>
-            </View>
-
-            {/* Copy */}
-            <Text style={styles.authModalHeadline}>
-              오늘 쓴 일기,{'\n'}내일도 읽을 수 있게.
-            </Text>
-            <Text style={styles.authModalBody}>
-              지금은 이 기기에만 저장돼요.{'\n'}계정을 만들면 기기를 바꿔도, 앱을 지워도{'\n'}일기가 그대로 남아있어요.
-            </Text>
-
-            {/* Feature pills */}
-            <View style={styles.authFeatureRow}>
-              <View style={styles.authFeaturePill}>
-                <Text style={styles.authFeatureIcon}>🌐</Text>
-                <Text style={styles.authFeatureText}>웹에서도 작성</Text>
-              </View>
-              <View style={styles.authFeaturePill}>
-                <Text style={styles.authFeatureIcon}>🔄</Text>
-                <Text style={styles.authFeatureText}>기기 간 동기화</Text>
-              </View>
-              <View style={styles.authFeaturePill}>
-                <Text style={styles.authFeatureIcon}>🔒</Text>
-                <Text style={styles.authFeatureText}>안전하게 보관</Text>
-              </View>
-            </View>
-
-            {/* CTAs */}
-            <View style={styles.authModalActions}>
-              <Pressable
-                style={styles.authModalPrimary}
-                onPress={() => {
-                  setShowAuthBanner(false);
-                  router.push('/auth');
-                }}
-              >
-                <Text style={styles.authModalPrimaryText}>계정 만들기</Text>
-              </Pressable>
-              <Pressable
-                style={styles.authModalSecondary}
-                onPress={async () => {
-                  await AsyncStorage.setItem('haru_auth_banner_dismissed', '1');
-                  setShowAuthBanner(false);
-                }}
-              >
-                <Text style={styles.authModalSecondaryText}>나중에 할게요</Text>
-              </Pressable>
-            </View>
-          </View>
         </SafeAreaView>
       </Modal>
 
@@ -568,53 +506,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutBtnText: { fontSize: 15, color: PAL.red, fontWeight: '500' },
-  authModal: {
-    flex: 1, backgroundColor: PAL.indigoDeep,
-  },
-  authModalInner: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 32, paddingBottom: 40,
-  },
-  authIconCircle: {
-    width: 88, height: 88, borderRadius: 44,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 32,
-  },
-  authModalHeadline: {
-    fontSize: 28, fontWeight: '600', color: PAL.bg,
-    fontFamily: 'NotoSerifKR-Medium',
-    textAlign: 'center', lineHeight: 42, marginBottom: 16,
-  },
-  authModalBody: {
-    fontSize: 15, color: 'rgba(255,255,255,0.65)',
-    textAlign: 'center', lineHeight: 24, marginBottom: 32,
-  },
-  authFeatureRow: {
-    flexDirection: 'row', gap: 10, marginBottom: 48, flexWrap: 'wrap', justifyContent: 'center',
-  },
-  authFeaturePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-  },
-  authFeatureIcon: { fontSize: 14 },
-  authFeatureText: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
-  authModalActions: { width: '100%', gap: 12 },
-  authModalPrimary: {
-    backgroundColor: PAL.bg, borderRadius: 16,
-    paddingVertical: 16, alignItems: 'center',
-  },
-  authModalPrimaryText: {
-    fontSize: 16, fontWeight: '700', color: PAL.indigoDeep, letterSpacing: -0.3,
-  },
-  authModalSecondary: {
-    paddingVertical: 14, alignItems: 'center',
-  },
-  authModalSecondaryText: {
-    fontSize: 14, color: 'rgba(255,255,255,0.45)',
-  },
   promptBanner: {
     marginTop: 22, marginHorizontal: 20,
     paddingVertical: 14, paddingHorizontal: 16,
@@ -636,6 +527,22 @@ const styles = StyleSheet.create({
   },
   sectionLabelCaret: {
     fontSize: 9, color: PAL.faint,
+  },
+  dateSelectorBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: PAL.paper,
+    borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderWidth: 1.5, borderColor: PAL.indigoDeep,
+    marginBottom: 12,
+  },
+  dateSelectorText: {
+    fontSize: 12, color: PAL.indigoDeep, letterSpacing: 1.2,
+    textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular', fontWeight: '600',
+  },
+  dateSelectorCaret: {
+    fontSize: 10, color: PAL.indigoDeep, fontWeight: '700',
   },
   emptyCard: {
     backgroundColor: PAL.paper, borderRadius: 18, padding: 28,
