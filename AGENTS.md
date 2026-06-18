@@ -10,7 +10,7 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 **Bundle ID:** ing.perpetual.app  
 **Apple Team:** SIG Inc. (867RGMZD7Y)  
-**ASC App ID:** (신규 앱 — App Store Connect에서 생성 후 eas.json에 추가 필요)
+**ASC App ID:** 6781657402
 
 # 핵심 아키텍처
 
@@ -81,7 +81,7 @@ eas build --platform ios --profile production --auto-submit --non-interactive
 
 - `eas.json` production 프로파일: `autoIncrement: true` (빌드번호 EAS가 자동 관리)
 - `appVersionSource: "remote"` → app.json buildNumber 수동 변경 불필요
-- submit 설정: `appleId: terra586@gmail.com` (ascAppId는 ASC에서 신규 앱 생성 후 추가)
+- submit 설정: `appleId: terra586@gmail.com`, `ascAppId: 6781657402`
 
 ## Provisioning Profile 주의사항
 
