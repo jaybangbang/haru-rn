@@ -139,7 +139,7 @@ export default function AuthScreen() {
       {mode === 'main' ? (
         <View style={styles.btnGroup}>
           <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
             buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
             cornerRadius={14}
             style={styles.appleBtn}
@@ -147,7 +147,7 @@ export default function AuthScreen() {
           />
 
           <Pressable style={[styles.socialBtn, { borderColor: PAL.line }]} onPress={signInWithGoogle}>
-            <Text style={styles.socialBtnText}>G  Google로 계속하기</Text>
+            <Text style={styles.socialBtnText}>G  Google로 가입하고 결제하기</Text>
           </Pressable>
 
           <View style={styles.divider}>
@@ -157,8 +157,10 @@ export default function AuthScreen() {
           </View>
 
           <Pressable style={styles.emailBtn} onPress={() => setMode('email')}>
-            <Text style={styles.emailBtnText}>이메일로 계속하기</Text>
+            <Text style={styles.emailBtnText}>이메일로 가입하고 결제하기</Text>
           </Pressable>
+
+          <Text style={styles.pricingNote}>가입 후 구독 플랜을 선택하게 됩니다 · 월 ₩6,900~</Text>
         </View>
       ) : (
         <View style={styles.btnGroup}>
@@ -224,6 +226,7 @@ const styles = StyleSheet.create({
   dividerText: { fontSize: 12, color: PAL.faint },
   emailBtn: { alignItems: 'center', paddingVertical: 8 },
   emailBtnText: { fontSize: 14, color: PAL.muted },
+  pricingNote: { fontSize: 12, color: PAL.faint, textAlign: 'center', marginTop: 16 },
   input: {
     height: 52, borderRadius: 14, borderWidth: 1, borderColor: PAL.line,
     paddingHorizontal: 16, fontSize: 15, color: PAL.ink,

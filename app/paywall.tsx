@@ -139,14 +139,9 @@ export default function PaywallScreen() {
                 <Text style={[styles.planLabel, selectedPlan === 'yearly' && styles.planLabelSelected]}>연간 구독</Text>
                 <Text style={[styles.planSub, selectedPlan === 'yearly' && styles.planSubSelected]}>월 5,750원</Text>
               </View>
-              <View style={styles.planRight}>
-                <View style={styles.bestValueBadge}>
-                  <Text style={styles.bestValueText}>2개월 무료</Text>
-                </View>
-                <Text style={[styles.planPrice, selectedPlan === 'yearly' && styles.planPriceSelected]}>
-                  {loadingOfferings ? '...' : yearlyPrice}
-                </Text>
-              </View>
+              <Text style={[styles.planPrice, selectedPlan === 'yearly' && styles.planPriceSelected]}>
+                {loadingOfferings ? '...' : yearlyPrice}
+              </Text>
             </View>
           </Pressable>
 
@@ -278,21 +273,6 @@ const styles = StyleSheet.create({
   },
   planSubSelected: {
     color: 'rgba(245,220,182,0.6)',
-  },
-  planRight: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  bestValueBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    backgroundColor: PAL.amberDeep,
-    borderRadius: 999,
-  },
-  bestValueText: {
-    fontSize: 11,
-    color: '#fff',
-    fontWeight: '700',
   },
   planPrice: {
     fontSize: 16,

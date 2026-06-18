@@ -186,7 +186,7 @@ export default function HomeScreen() {
                 ? `TODAY · ${selectedDate.getMonth() + 1}.${selectedDate.getDate()}`
                 : `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 · 과거 일기`}
             </Text>
-            <Text style={styles.dateSelectorCaret}>{showPicker ? '▲' : '▽'}</Text>
+            <Text style={styles.dateSelectorCaret}>{showPicker ? '▲' : '▼'}</Text>
           </Pressable>
 
           {showPicker && (
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     backgroundColor: PAL.paper,
     borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 7,
-    borderWidth: 1.5, borderColor: PAL.indigoDeep,
+    borderWidth: 1, borderColor: PAL.lineSoft,
     marginBottom: 12,
   },
   dateSelectorText: {
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular', fontWeight: '600',
   },
   dateSelectorCaret: {
-    fontSize: 10, color: PAL.indigoDeep, fontWeight: '700',
+    fontSize: 11, color: PAL.indigoDeep, fontWeight: '900',
   },
   emptyCard: {
     backgroundColor: PAL.paper, borderRadius: 18, padding: 28,
