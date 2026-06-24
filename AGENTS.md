@@ -4,7 +4,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 # 프로젝트 개요
 
-AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(insighter/wit/coach)가 순차적으로 댓글을 달고, 유저 답글에도 딜레이 후 응답합니다.
+AI 일기 앱 "Perpetual". 사용자가 일기를 쓰면 3명의 AI 페르소나(insighter/wit/coach)가 순차적으로 댓글을 달고, 유저 답글에도 딜레이 후 응답합니다.
 
 **페르소나:** 김시원(@siwon.ai, insighter) / 한하경(@hakyung.ai, wit) / 유채아(@chaea.ai, coach)
 
@@ -14,7 +14,7 @@ AI 일기 앱 "하루". 사용자가 일기를 쓰면 3명의 AI 페르소나(in
 
 # 핵심 아키텍처
 
-- **스토리지:** Supabase `haru` 스키마 — `entries`, `weekly_summaries`, `last_read` 테이블
+- **스토리지:** Supabase `perpetual` 스키마 — `entries`, `weekly_summaries`, `last_read` 테이블
 - **인증:** Supabase Auth — 앱 시작 시 자동 익명 로그인, 나중에 Apple/Google/이메일로 업그레이드
 - **AI 호출:** `haru-api` (별도 Vercel 배포) → Anthropic `claude-sonnet-4-6`
 - **알림:** `lib/notifications.ts` — expo-notifications 로컬 푸시 (APNs 원격 아님)
@@ -98,6 +98,7 @@ eas build --platform ios --profile production --auto-submit --non-interactive
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`
 - `EXPO_PUBLIC_API_URL` (Anthropic)
+- `EXPO_PUBLIC_REVENUECAT_IOS_KEY` (RevenueCat iOS SDK key)
 
 `.env.local` (git 제외, 민감 키 메모용):
 - `SUPABASE_URL`, `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_WEB_CLIENT_SECRET`, `GOOGLE_IOS_CLIENT_ID`
@@ -114,3 +115,48 @@ npx expo run:ios --device
 ```bash
 npx expo start --ios --port 8082
 ```
+
+# 미완료 작업 (다음 세션에서 재개)
+
+## Google Sign-In — iOS OAuth 클라이언트 교체 (리빌드 필요)
+
+**현황 (2026-06-23):** Supabase Google Auth Client ID 수정 완료 → 현재 TestFlight 빌드에서 구글 로그인 작동함.  
+단, iOS OAuth 클라이언트가 구 번들 ID `com.sigcrew.haru`로 등록된 상태 — 언제든 막힐 수 있음.
+
+**해야 할 것 (리빌드 필요):**
+1. Google Cloud Console → APIs & Services → Credentials → 새 iOS OAuth 클라이언트 생성
+   - 애플리케이션 유형: iOS
+   - 번들 ID: `ing.perpetual.app`
+   - → 새 클라이언트 ID 발급
+2. `.env` 업데이트: `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<새 ID>.apps.googleusercontent.com`
+3. `app.json` `iosUrlScheme` 업데이트: `"com.googleusercontent.apps.<새 ID 숫자부분>"`
+4. `npx expo prebuild` 재실행 → 빌드
+
+**현재 웹 클라이언트 ID:** `785797626728-m8f5megpahf74s90i7e350qa4b8pfkjk` (변경 없음)  
+**현재 iOS 클라이언트 ID (구):** `785797626728-gl04q5erv10i18pbef9qtsp6coehkk8k` (교체 필요)  
+**Supabase Google Auth:** `785797626728-m8f5megpahf74s90i7e350qa4b8pfkjk.apps.googleusercontent.com` 추가 완료 ✓
+
+## 앱 심사 제출 (최우선 다음 작업)
+
+**현황 (2026-06-24):** RevenueCat `appl_` 키 교체 완료, ASC 구독 상품 2개 등록 완료, 빌드 #34 TestFlight 업로드 중.
+offerings null 원인: ASC 첫 구독상품은 앱 바이너리 심사 제출 1회 해야 sandbox에서도 StoreKit 인식.
+
+**해야 할 것:**
+1. ASC에서 앱 버전에 구독 상품 연결
+2. 스크린샷 (6.5" + 5.5") 준비
+3. 한국어 앱 설명 + 키워드 작성
+4. 심사 제출 → 통과 후 Sandbox Apple ID로 결제 테스트
+
+## RevenueCat 설정 (2026-06-24 완료)
+
+- API key: `appl_POBGfGENSoqmPwxKoLJlFRyUAYZ` (.env + EAS production 환경변수)
+- Entitlement: `premium`
+- Products: `ing.perpetual.app.premium.monthly` (₩6,900) / `ing.perpetual.app.premium.yearly` (₩69,000)
+- Offering: `default` — Perpetual iOS 앱에 연결 완료
+- P8 키: KW72X242J3 / Issuer ID: cb047421-9894-4473-b0e5-89d0388c66a4 등록 완료
+
+**주의:** fullScreenModal(paywall.tsx)에서 Toast 미표시 → Alert.alert() 사용 중
+   - `ing.perpetual.app.premium.monthly` (₩6,900)
+   - `ing.perpetual.app.premium.yearly` (₩69,000)
+2. RevenueCat에 실제 Apple App Store 앱 등록 → `appl_` 키로 교체
+3. Sandbox 결제 테스트 (페이월 → 구매 → premium entitlement 확인)

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ActivityIndicator,
-  ScrollView, Dimensions,
+  ScrollView, Dimensions, Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { PurchasesPackage } from 'react-native-purchases';
 import { PAL } from '@/constants/palette';
 import { Toast } from '@/components/Toast';
 import { supabase } from '@/lib/supabase';
-import { getOfferings, purchasePackage, restorePurchases } from '@/lib/purchases';
+import { getOfferings, purchasePackage, restorePurchases, getActiveSubscription } from '@/lib/purchases';
 import { migrateAnonymousData } from '@/lib/auth';
 
 const { width } = Dimensions.get('window');
@@ -28,6 +28,17 @@ export default function PaywallScreen() {
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly'>('yearly');
   const [loading, setLoading] = useState(false);
   const [loadingOfferings, setLoadingOfferings] = useState(true);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    getActiveSubscription().then(active => {
+      if (active) {
+        onSuccess();
+      } else {
+        setChecking(false);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     getOfferings()
@@ -58,7 +69,7 @@ export default function PaywallScreen() {
         await onSuccess();
         return;
       }
-      Toast.show('잠시 후 다시 시도해주세요');
+      Alert.alert('잠시 후 다시 시도해주세요');
       return;
     }
 
@@ -68,10 +79,10 @@ export default function PaywallScreen() {
       if (success) {
         await onSuccess();
       } else {
-        Toast.show('결제가 취소되었어요');
+        Alert.alert('결제가 취소되었어요');
       }
     } catch (e: any) {
-      if (!e.userCancelled) Toast.show('결제 중 오류가 발생했어요');
+      if (!e.userCancelled) Alert.alert('결제 중 오류가 발생했어요');
     } finally {
       setLoading(false);
     }
@@ -84,10 +95,10 @@ export default function PaywallScreen() {
       if (hasActive) {
         await onSuccess();
       } else {
-        Toast.show('활성 구독을 찾을 수 없어요');
+        Alert.alert('활성 구독을 찾을 수 없어요');
       }
     } catch {
-      Toast.show('복원 중 오류가 발생했어요');
+      Alert.alert('복원 중 오류가 발생했어요');
     } finally {
       setLoading(false);
     }
@@ -102,6 +113,12 @@ export default function PaywallScreen() {
 
   const monthlyPrice = offerings?.monthly?.product.priceString ?? '₩6,900';
   const yearlyPrice = offerings?.yearly?.product.priceString ?? '₩69,000';
+
+  if (checking) return (
+    <View style={{ flex: 1, backgroundColor: PAL.indigoDeep, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator color={PAL.bg} />
+    </View>
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>

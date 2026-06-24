@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersonaKey } from './types';
 
-const DAILY_NOTIF_ID_KEY = 'haru_daily_notif_id';
+const DAILY_NOTIF_ID_KEY = 'perpetual_daily_notif_id';
 
 const PERSONA_NAMES: Record<PersonaKey, string> = {
   insighter: '김시원',
@@ -113,7 +113,7 @@ export async function cancelDailyDiaryReminder(): Promise<void> {
 
 export async function restoreDailyDiaryReminder(): Promise<void> {
   try {
-    const saved = await AsyncStorage.getItem('haru_notif_time');
+    const saved = await AsyncStorage.getItem('perpetual_notif_time');
     if (!saved) return;
     const [hour, minute] = saved.split(':').map(Number);
     // Only reschedule if not already active
@@ -127,7 +127,7 @@ export async function restoreDailyDiaryReminder(): Promise<void> {
 }
 
 export async function scheduleWeeklySummaryNotification(firstEntryTs: number): Promise<void> {
-  const alreadyScheduled = await AsyncStorage.getItem('haru_weekly_notif_scheduled');
+  const alreadyScheduled = await AsyncStorage.getItem('perpetual_weekly_notif_scheduled');
   if (alreadyScheduled) return;
   const fireAt = firstEntryTs + 7 * 24 * 60 * 60 * 1000;
   const seconds = Math.max(10, Math.floor((fireAt - Date.now()) / 1000));
@@ -144,6 +144,6 @@ export async function scheduleWeeklySummaryNotification(firstEntryTs: number): P
         repeats: false,
       },
     });
-    await AsyncStorage.setItem('haru_weekly_notif_scheduled', '1');
+    await AsyncStorage.setItem('perpetual_weekly_notif_scheduled', '1');
   } catch {}
 }

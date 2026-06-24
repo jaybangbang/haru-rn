@@ -8,7 +8,7 @@ export async function loadEntries(): Promise<DiaryEntry[]> {
     .from('entries')
     .select('*')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('date', { ascending: false });
   if (error) throw error;
   return (data ?? []).map(rowToEntry);
 }
@@ -112,6 +112,7 @@ function entryToRow(e: DiaryEntry) {
     comments: e.comments,
     pending_comments: e.pendingComments ?? [],
     energy_score: e.energyScore ?? null,
+    topic: e.topic ?? null,
     created_at: e.createdAt,
   };
 }
@@ -127,6 +128,7 @@ function rowToEntry(row: Record<string, unknown>): DiaryEntry {
     comments: (row.comments as DiaryEntry['comments']) ?? [],
     pendingComments: (row.pending_comments as DiaryEntry['pendingComments']) ?? [],
     energyScore: row.energy_score as number | undefined,
+    topic: row.topic as string | undefined,
     createdAt: row.created_at as number,
   };
 }

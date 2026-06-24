@@ -41,6 +41,7 @@ export interface DiaryEntry {
   pendingComments?: PendingComment[];
   pendingUserReplies?: PendingUserReply[];
   energyScore?: number;
+  topic?: string;
   createdAt: number;
 }
 

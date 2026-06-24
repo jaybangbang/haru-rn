@@ -64,7 +64,7 @@ export default function EntryDetailScreen() {
   const inputRef = useRef<TextInput>(null);
 
   // Persist likes per entry
-  const likesKey = `haru_likes_${id}`;
+  const likesKey = `perpetual_likes_${id}`;
 
   const loadLikes = useCallback(async () => {
     try {

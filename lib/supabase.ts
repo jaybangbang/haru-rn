@@ -5,7 +5,7 @@ const URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(URL, ANON_KEY, {
-  db: { schema: 'haru' },
+  db: { schema: 'perpetual' },
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

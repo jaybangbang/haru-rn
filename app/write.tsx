@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView,
   Platform, ScrollView, Alert, ActivityIndicator, Modal, SafeAreaView,
@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { DiaryEntry, Emotion, EmotionKey } from '@/lib/types';
-import { generateId, saveEntry, formatDate, makeDateObj } from '@/lib/storage';
+import { generateId, saveEntry, formatDate, makeDateObj, getWeekKey } from '@/lib/storage';
 import { schedulePendingComments } from '@/lib/ai';
 import { scheduleCommentNotification } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
@@ -44,11 +44,11 @@ function isToday(d: Date) {
 
 export default function WriteScreen() {
   const insets = useSafeAreaInsets();
-  const { date: dateParam, entryId } = useLocalSearchParams<{ date?: string; entryId?: string }>();
+  const { date: dateParam, entryId, topic: topicParam } = useLocalSearchParams<{ date?: string; entryId?: string; topic?: string }>();
   const isEditMode = !!entryId;
   const [text, setText] = useState('');
   const [selectedEmotions, setSelectedEmotions] = useState<Emotion[]>([]);
-  const [hintIdx, setHintIdx] = useState(0);
+  const [topic, setTopic] = useState<string | undefined>(topicParam ?? undefined);
   const [submitting, setSubmitting] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     if (dateParam) {
@@ -78,17 +78,13 @@ export default function WriteScreen() {
         existingEntryRef.current = found;
         setText(found.body);
         setSelectedEmotions(found.emotions);
+        if (found.topic) setTopic(found.topic);
         const [y, m, d] = found.date.split('.').map(Number);
         setSelectedDate(new Date(y, m - 1, d));
       }
     })();
   }, [entryId, isEditMode]);
 
-  useEffect(() => {
-    if (isEditMode) return;
-    const t = setInterval(() => setHintIdx(i => (i + 1) % WRITE_HINTS.length), 3200);
-    return () => clearInterval(t);
-  }, [isEditMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => inputRef.current?.focus(), 300);
@@ -121,6 +117,7 @@ export default function WriteScreen() {
           body: trimmed,
           preview,
           emotions: selectedEmotions,
+          topic,
         };
         await saveEntry(updated);
         router.back();
@@ -148,20 +145,27 @@ export default function WriteScreen() {
         emotions: selectedEmotions,
         comments: [],
         pendingComments: pendingWithNotifs,
+        topic,
         createdAt: ts,
       };
 
       await saveEntry(entry);
 
-      // 익명 유저 + 배너 안 닫은 경우 → 회원가입 유도 전체화면
-      const dismissed = await AsyncStorage.getItem('haru_auth_banner_dismissed');
-      if (!dismissed) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.is_anonymous) {
-          savedEntryId.current = entry.id;
-          setShowAuthPrompt(true);
-          setSubmitting(false);
-          return;
+      // 주간 리포트 스크롤 완료 후 다음 주 일기 작성 시 회원가입 유도
+      const reportReadKey = await AsyncStorage.getItem('perpetual_weekly_report_read');
+      if (reportReadKey) {
+        const currentWeekKey = getWeekKey(new Date());
+        if (reportReadKey < currentWeekKey) {
+          const dismissed = await AsyncStorage.getItem('perpetual_auth_banner_dismissed');
+          if (!dismissed) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.is_anonymous) {
+              savedEntryId.current = entry.id;
+              setShowAuthPrompt(true);
+              setSubmitting(false);
+              return;
+            }
+          }
         }
       }
 
@@ -221,6 +225,15 @@ export default function WriteScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {topic ? (
+          <View style={styles.topicTag}>
+            <Text style={styles.topicTagText} numberOfLines={1}>{topic}</Text>
+            <Pressable onPress={() => setTopic(undefined)} hitSlop={8}>
+              <Text style={styles.topicTagX}>✕</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <TextInput
           ref={inputRef}
           value={text}
@@ -233,7 +246,23 @@ export default function WriteScreen() {
           scrollEnabled={false}
         />
 
-        <Text style={styles.hint}>· {WRITE_HINTS[hintIdx]}</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hintRow}
+          style={styles.hintScroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {WRITE_HINTS.map((h, i) => (
+            <Pressable
+              key={i}
+              style={[styles.hintChip, topic === h && styles.hintChipActive]}
+              onPress={() => setTopic(prev => prev === h ? undefined : h)}
+            >
+              <Text style={[styles.hintChipText, topic === h && styles.hintChipTextActive]}>{h}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
 
         <View style={styles.emotionSection}>
           <Text style={styles.emotionLabel}>오늘의 감정</Text>
@@ -310,7 +339,7 @@ export default function WriteScreen() {
               <Pressable
                 style={styles.authModalSecondary}
                 onPress={async () => {
-                  await AsyncStorage.setItem('haru_auth_banner_dismissed', '1');
+                  await AsyncStorage.setItem('perpetual_auth_banner_dismissed', '1');
                   setShowAuthPrompt(false);
                   if (savedEntryId.current) router.replace(`/entry/${savedEntryId.current}`);
                 }}
@@ -391,11 +420,61 @@ const styles = StyleSheet.create({
     minHeight: 240,
     backgroundColor: 'transparent',
   },
-  hint: {
+  topicTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(217,145,74,0.14)',
+    borderWidth: 1,
+    borderColor: PAL.amberDeep + '55',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingLeft: 12,
+    paddingRight: 8,
+    marginBottom: 14,
+    gap: 8,
+    maxWidth: '100%',
+  },
+  topicTagText: {
+    fontSize: 13,
+    color: PAL.amberDeep,
+    fontWeight: '500',
+    fontFamily: 'NotoSerifKR-Regular',
+    flexShrink: 1,
+  },
+  topicTagX: {
+    fontSize: 12,
+    color: PAL.amberDeep,
+    fontWeight: '600',
+    opacity: 0.7,
+  },
+  hintScroll: {
     marginTop: 14,
-    fontSize: 12.5,
+  },
+  hintRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  hintChip: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: PAL.line,
+    backgroundColor: 'transparent',
+  },
+  hintChipActive: {
+    backgroundColor: 'rgba(217,145,74,0.14)',
+    borderColor: PAL.amberDeep + '55',
+  },
+  hintChipText: {
+    fontSize: 12,
     color: PAL.muted,
     letterSpacing: -0.1,
+  },
+  hintChipTextActive: {
+    color: PAL.amberDeep,
+    fontWeight: '500',
   },
   emotionSection: {
     marginTop: 28,

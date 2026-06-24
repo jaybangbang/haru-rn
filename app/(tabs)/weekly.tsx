@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator, Image, Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Line, Text as SvgText, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { PAL } from '@/constants/palette';
 import { DiaryEntry, PersonaKey, WeeklySummary } from '@/lib/types';
@@ -20,24 +21,40 @@ import { supabase } from '@/lib/supabase';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-function getStreakData(entries: DiaryEntry[]) {
+function getStreakData(entries: DiaryEntry[], savedBest: number = 0) {
   const today = new Date();
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const dates = new Set(entries.map(e => e.date));
+
+  // 오늘 일기 없으면 어제부터 카운트
+  const cursor = new Date(today);
+  if (!dates.has(fmt(cursor))) cursor.setDate(cursor.getDate() - 1);
+
+  let current = 0;
+  const c = new Date(cursor);
+  while (dates.has(fmt(c))) { current++; c.setDate(c.getDate() - 1); }
+
+  // StreakCard용 14일 시각 히스토리
   const history: boolean[] = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const dateStr = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-    history.push(entries.some(e => e.date === dateStr));
+    history.push(dates.has(fmt(d)));
   }
-  let startIdx = history.length - 1;
-  if (!history[startIdx]) startIdx--;
-  let current = 0;
-  for (let i = startIdx; i >= 0; i--) {
-    if (history[i]) current++;
-    else break;
-  }
-  const best = Math.max(current, 1);
-  return { current, best, thisYear: entries.length, history };
+  return { current, best: Math.max(current, savedBest), thisYear: entries.length, history };
+}
+
+function getWeekLabel(offset: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offset * 7);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return `${mon.getMonth() + 1}월 ${mon.getDate()}일 – ${sun.getMonth() + 1}월 ${sun.getDate()}일`;
 }
 
 export default function WeeklyScreen() {
@@ -45,7 +62,9 @@ export default function WeeklyScreen() {
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [summary, setSummary] = useState<WeeklySummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [emptyWeek, setEmptyWeek] = useState(false);
   const [qaLoading, setQaLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'v2' | 'v1' | 'v3'>('v2');
   const [summaryV1, setSummaryV1] = useState<WeeklySummary | null>(null);
@@ -53,56 +72,124 @@ export default function WeeklyScreen() {
   const [summaryV3, setSummaryV3] = useState<WeeklySummary | null>(null);
   const [loadingV3, setLoadingV3] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(true);
-  const weekKey = getWeekKey();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [streakBest, setStreakBest] = useState(0);
+
+  // 전주 이동 시 즉시 복원용 인메모리 캐시
+  const summaryCache = useRef<Record<string, WeeklySummary>>({});
+  // 리포트 스크롤 완료 중복 저장 방지
+  const hasMarkedRead = useRef(false);
+
+  const weekKey = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + weekOffset * 7);
+    return getWeekKey(d);
+  }, [weekOffset]);
+
+  const weekLabel = useMemo(() => getWeekLabel(weekOffset), [weekOffset]);
+
+  // 주간 변경 시 리셋 — 캐시 있으면 즉시 복원
+  useEffect(() => {
+    hasMarkedRead.current = false;
+    const hit = summaryCache.current[weekKey + '_v3'];
+    setSummaryV3(hit ?? null);
+    setSummaryV1(null);
+    setSummary(null);
+    setDaysLeft(null);
+    setLoadError(null);
+    setEmptyWeek(false);
+  }, [weekKey]);
 
   const loadData = useCallback(async () => {
-    const [all, { data: { user } }] = await Promise.all([
+    const [all, authResult, savedBestStr] = await Promise.all([
       loadEntries(),
       supabase.auth.getUser(),
+      AsyncStorage.getItem('perpetual_streak_best'),
     ]);
     setEntries(all);
-    setIsAnonymous(user?.is_anonymous ?? true);
+    setIsAnonymous(authResult.data.user?.is_anonymous ?? true);
+
+    // 스트리크 최고 기록 영속
+    const savedBest = parseInt(savedBestStr ?? '0');
+    const dateFmt = (d: Date) =>
+      `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+    const dateSet = new Set(all.map(e => e.date));
+    const cur = new Date();
+    if (!dateSet.has(dateFmt(cur))) cur.setDate(cur.getDate() - 1);
+    let currentStreak = 0;
+    const cc = new Date(cur);
+    while (dateSet.has(dateFmt(cc))) { currentStreak++; cc.setDate(cc.getDate() - 1); }
+    const newBest = Math.max(currentStreak, savedBest);
+    setStreakBest(newBest);
+    if (currentStreak > savedBest) {
+      AsyncStorage.setItem('perpetual_streak_best', newBest.toString());
+    }
 
     if (all.length === 0) {
       setDaysLeft(7);
       return;
     }
 
-    const firstTs = Math.min(...all.map(e => e.createdAt));
-    const elapsed = Date.now() - firstTs;
+    // 7일 게이트: 현재 주에서만 적용
+    if (weekOffset === 0) {
+      const firstTs = Math.min(...all.map(e => e.createdAt));
+      const elapsed = Date.now() - firstTs;
 
-    if (elapsed < SEVEN_DAYS_MS) {
-      const left = Math.ceil((SEVEN_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
-      setDaysLeft(left);
-      // Schedule the "summary ready" notification once
-      scheduleWeeklySummaryNotification(firstTs);
-      return;
+      if (elapsed < SEVEN_DAYS_MS) {
+        const left = Math.ceil((SEVEN_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
+        setDaysLeft(left);
+        scheduleWeeklySummaryNotification(firstTs);
+        return;
+      }
     }
 
     setDaysLeft(null);
+    setEmptyWeek(false);
 
     const cached = await loadWeeklySummary(weekKey + '_v3');
     if (cached) {
+      summaryCache.current[weekKey + '_v3'] = cached;
       setSummaryV3(cached);
       return;
     }
 
+    // 해당 주 일기 필터 (date 기준)
     const thisWeek = all.filter(e => {
-      const created = new Date(e.createdAt);
-      return getWeekKey(created) === weekKey;
+      const [y, m, d] = e.date.split('.').map(Number);
+      return getWeekKey(new Date(y, m - 1, d)) === weekKey;
     });
 
+    // 해당 주 일기 없으면 생성 스킵 (weekOffset 무관)
+    if (thisWeek.length === 0) {
+      setEmptyWeek(true);
+      return;
+    }
+
     setLoading(true);
+    setLoadError(null);
     try {
       const s = await generateWeeklySummaryV3(thisWeek, weekKey + '_v3');
       await saveWeeklySummary(s);
+      summaryCache.current[weekKey + '_v3'] = s;
       setSummaryV3(s);
+    } catch {
+      setLoadError('요약을 불러오는 중 오류가 발생했어요.');
     } finally {
       setLoading(false);
     }
-  }, [weekKey]);
+  }, [weekKey, weekOffset]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  // 리포트 스크롤 완료 감지 → 가입 전환 트리거용 플래그 저장
+  const handleScrollEnd = useCallback(async (nativeEvent: any) => {
+    if (!summaryV3 || hasMarkedRead.current) return;
+    const { contentOffset, layoutMeasurement, contentSize } = nativeEvent;
+    if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 80) {
+      hasMarkedRead.current = true;
+      await AsyncStorage.setItem('perpetual_weekly_report_read', weekKey);
+    }
+  }, [summaryV3, weekKey]);
 
   const handleTabChange = async (tab: 'v2' | 'v1' | 'v3') => {
     setActiveTab(tab);
@@ -111,9 +198,12 @@ export default function WeeklyScreen() {
       if (cached) { setSummaryV1(cached); return; }
       setLoadingV1(true);
       try {
-        const thisWeek = entries.filter(e => getWeekKey(new Date(e.createdAt)) === weekKey);
-        const src = thisWeek.length > 0 ? thisWeek : entries;
-        const s = await generateWeeklySummaryV1(src, weekKey + '_v1');
+        const thisWeek = entries.filter(e => {
+          const [y, m, d] = e.date.split('.').map(Number);
+          return getWeekKey(new Date(y, m - 1, d)) === weekKey;
+        });
+        if (thisWeek.length === 0) return;
+        const s = await generateWeeklySummaryV1(thisWeek, weekKey + '_v1');
         await saveWeeklySummary(s);
         setSummaryV1(s);
       } finally {
@@ -125,9 +215,12 @@ export default function WeeklyScreen() {
       if (cached) { setSummaryV3(cached); return; }
       setLoadingV3(true);
       try {
-        const thisWeek = entries.filter(e => getWeekKey(new Date(e.createdAt)) === weekKey);
-        const src = thisWeek.length > 0 ? thisWeek : entries;
-        const s = await generateWeeklySummaryV3(src, weekKey + '_v3');
+        const thisWeek = entries.filter(e => {
+          const [y, m, d] = e.date.split('.').map(Number);
+          return getWeekKey(new Date(y, m - 1, d)) === weekKey;
+        });
+        if (thisWeek.length === 0) { setLoadingV3(false); return; }
+        const s = await generateWeeklySummaryV3(thisWeek, weekKey + '_v3');
         await saveWeeklySummary(s);
         setSummaryV3(s);
       } finally {
@@ -136,32 +229,46 @@ export default function WeeklyScreen() {
     }
   };
 
-  const streak = getStreakData(entries);
-  const avgEnergy = summaryV3
+  const streak = getStreakData(entries, streakBest);
+  const hasEnergy = summaryV3?.days.some(d => d.v > 0) ?? false;
+  const avgEnergy = summaryV3 && hasEnergy
     ? (summaryV3.days.reduce((s, d) => s + d.v, 0) / Math.max(1, summaryV3.days.filter(d => d.v > 0).length)).toFixed(1)
     : '0.0';
-
-  if (loading && !summaryV3) {
-    return (
-      <View style={[styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={PAL.amber} />
-        <Text style={styles.loadingText}>이번 주 일기를 읽는 중이에요…</Text>
-      </View>
-    );
-  }
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: PAL.bg }}
       contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
+      onScrollEndDrag={(e) => handleScrollEnd(e.nativeEvent)}
+      onMomentumScrollEnd={(e) => handleScrollEnd(e.nativeEvent)}
     >
+      {/* 헤더 + 주간 네비게이션 */}
       <View style={styles.header}>
         <Text style={styles.headerLabel}>WEEKLY · 주간</Text>
-        <Text style={styles.headerTitle}>{summaryV3?.title ?? '주간 요약'} — {summaryV3?.subtitle ?? '나의 한 주'}</Text>
-        {summaryV3?.dateRange ? (
-          <Text style={styles.headerSub}>{summaryV3.dateRange}</Text>
-        ) : null}
+        <View style={styles.headerNav}>
+          <Pressable
+            onPress={() => setWeekOffset(o => o - 1)}
+            style={styles.navBtn}
+            hitSlop={10}
+          >
+            <Text style={styles.navArrow}>‹</Text>
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>
+              {summaryV3?.title ?? (weekOffset === 0 ? '주간 요약' : `${weekLabel.split('–')[0].trim()} 주`)} — {summaryV3?.subtitle ?? '나의 한 주'}
+            </Text>
+            <Text style={styles.headerSub}>{weekLabel}</Text>
+          </View>
+          <Pressable
+            onPress={() => setWeekOffset(o => Math.min(0, o + 1))}
+            style={[styles.navBtn, weekOffset === 0 && styles.navBtnDisabled]}
+            disabled={weekOffset === 0}
+            hitSlop={10}
+          >
+            <Text style={[styles.navArrow, weekOffset === 0 && styles.navArrowDisabled]}>›</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* DEV: 즉시 생성 버튼 */}
@@ -191,7 +298,7 @@ export default function WeeklyScreen() {
 
       <StreakCard streak={streak} />
 
-      {/* 7-day waiting state */}
+      {/* 7일 대기 */}
       {daysLeft !== null && (
         <View style={styles.waitCard}>
           <Text style={styles.waitEmoji}>📓</Text>
@@ -204,14 +311,45 @@ export default function WeeklyScreen() {
         </View>
       )}
 
+      {/* 과거 주 일기 없음 */}
+      {emptyWeek && (
+        <View style={styles.waitCard}>
+          <Text style={styles.waitEmoji}>📅</Text>
+          <Text style={styles.waitTitle}>이 주에는 기록이 없어요</Text>
+          <Text style={styles.waitBody}>다른 주를 선택해보세요</Text>
+        </View>
+      )}
+
+      {/* 인라인 리포트 로딩 (전체화면 대신) */}
+      {loading && !summaryV3 && daysLeft === null && !emptyWeek && (
+        <View style={styles.reportLoadingCard}>
+          <ActivityIndicator size="large" color={PAL.amber} />
+          <Text style={styles.loadingText}>이번 주 일기를 읽는 중이에요…</Text>
+        </View>
+      )}
+
+      {/* 에러 상태 */}
+      {!loading && !summaryV3 && daysLeft === null && !emptyWeek && loadError && (
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <Pressable style={styles.retryBtn} onPress={loadData}>
+            <Text style={styles.retryBtnText}>다시 시도</Text>
+          </Pressable>
+        </View>
+      )}
+
       {/* 감정 에너지 차트 */}
       {summaryV3 && (
         <View style={styles.chartCard}>
           <View style={styles.chartHeader}>
             <Text style={styles.chartLabel}>감정 에너지</Text>
-            <Text style={styles.chartLabel}>평균 {avgEnergy} / 10</Text>
+            {hasEnergy && <Text style={styles.chartLabel}>평균 {avgEnergy} / 10</Text>}
           </View>
-          <EnergyChart days={summaryV3.days} />
+          {hasEnergy ? (
+            <EnergyChart days={summaryV3.days} />
+          ) : (
+            <EnergyEmptyState />
+          )}
         </View>
       )}
 
@@ -394,6 +532,24 @@ function LetterCard({ persona, text }: { persona: PersonaKey; text: string }) {
   );
 }
 
+const SAMPLE_ENERGY_DAYS = [
+  { d: '월', v: 6 }, { d: '화', v: 4 }, { d: '수', v: 8 },
+  { d: '목', v: 5 }, { d: '금', v: 7 }, { d: '토', v: 9 }, { d: '일', v: 6 },
+];
+
+function EnergyEmptyState() {
+  return (
+    <View>
+      <View style={{ opacity: 0.25 }}>
+        <EnergyChart days={SAMPLE_ENERGY_DAYS} />
+      </View>
+      <Text style={styles.energyEmptyText}>
+        일기 작성 후 감정 에너지를 기록하면{'\n'}여기에 그래프가 표시돼요
+      </Text>
+    </View>
+  );
+}
+
 function EnergyChart({ days }: { days: { d: string; v: number }[] }) {
   const W = 320;
   const H = 150;
@@ -486,13 +642,29 @@ const styles = StyleSheet.create({
   headerLabel: {
     fontSize: 12, color: PAL.muted, letterSpacing: 1.5,
     textTransform: 'uppercase', fontFamily: 'NotoSerifKR-Regular',
+    marginBottom: 10,
+  },
+  headerNav: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  navBtn: {
+    width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+  },
+  navBtnDisabled: {
+    opacity: 0.25,
+  },
+  navArrow: {
+    fontSize: 28, color: PAL.indigoDeep, fontWeight: '300', lineHeight: 32,
+  },
+  navArrowDisabled: {
+    color: PAL.muted,
   },
   headerTitle: {
-    marginTop: 6, fontSize: 26, fontWeight: '500',
+    fontSize: 20, fontWeight: '500',
     color: PAL.ink, fontFamily: 'NotoSerifKR-Medium',
     letterSpacing: -0.2,
   },
-  headerSub: { marginTop: 4, fontSize: 12, color: PAL.muted },
+  headerSub: { marginTop: 3, fontSize: 12, color: PAL.muted },
   waitCard: {
     marginHorizontal: 20, marginTop: 20,
     padding: 24, borderRadius: 18,
@@ -509,6 +681,28 @@ const styles = StyleSheet.create({
     fontSize: 13, color: PAL.muted, textAlign: 'center',
     lineHeight: 20, marginTop: 4,
   },
+  reportLoadingCard: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 32, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    alignItems: 'center', gap: 16,
+  },
+  errorCard: {
+    marginHorizontal: 20, marginTop: 20,
+    padding: 24, borderRadius: 18,
+    backgroundColor: PAL.paper,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+    alignItems: 'center', gap: 14,
+  },
+  errorText: {
+    fontSize: 14, color: PAL.muted, textAlign: 'center', lineHeight: 22,
+  },
+  retryBtn: {
+    paddingVertical: 10, paddingHorizontal: 20,
+    backgroundColor: PAL.indigoDeep, borderRadius: 999,
+  },
+  retryBtnText: { fontSize: 13, color: '#F5DCB6', fontWeight: '600' },
   qaBtn: {
     marginTop: 16, paddingVertical: 10, paddingHorizontal: 16,
     borderRadius: 10, backgroundColor: '#2D2A5C22',
@@ -526,6 +720,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4, paddingBottom: 6,
   },
   chartLabel: { fontSize: 11.5, color: PAL.muted, letterSpacing: 0.4 },
+  energyEmptyText: {
+    fontSize: 12, color: PAL.muted, textAlign: 'center',
+    lineHeight: 18, marginTop: 8, paddingHorizontal: 16,
+  },
   letterCard: {
     marginHorizontal: 20, marginTop: 18,
     padding: 20, borderRadius: 18,

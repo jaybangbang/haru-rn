@@ -39,7 +39,7 @@ export default function RootLayout() {
       await SplashScreen.hideAsync();
       requestNotificationPermissions();
       restoreDailyDiaryReminder();
-      const onboarded = await AsyncStorage.getItem('haru_onboarded');
+      const onboarded = await AsyncStorage.getItem('perpetual_onboarded');
       if (!onboarded) router.replace('/onboarding');
     })();
   }, [loaded]);

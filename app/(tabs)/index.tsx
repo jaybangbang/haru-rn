@@ -101,7 +101,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!showAccountModal) return;
-    AsyncStorage.getItem('haru_notif_time').then(raw => {
+    AsyncStorage.getItem('perpetual_notif_time').then(raw => {
       if (!raw) return;
       const [h, m] = raw.split(':').map(Number);
       const d = new Date();
@@ -129,7 +129,7 @@ export default function HomeScreen() {
     setUnreadCount(0);
   };
 
-  const recent = entries.filter(e => e.date !== todayStr).slice(0, 10);
+  const recent = entries.filter(e => e.date !== selectedStr).slice(0, 10);
 
   return (
     <>
@@ -142,7 +142,7 @@ export default function HomeScreen() {
         {/* Top bar */}
         <View style={styles.topBar}>
           <View>
-            <Text style={styles.appName}>Haru</Text>
+            <Text style={styles.appName}>Perpetual</Text>
             <Text style={styles.dateText}>{todayString()}</Text>
           </View>
           <View style={styles.topActions}>
@@ -170,7 +170,7 @@ export default function HomeScreen() {
 
   
         {/* Prompt banner */}
-        <Pressable style={styles.promptBanner} onPress={() => router.push('/write')}>
+        <Pressable style={styles.promptBanner} onPress={() => router.push({ pathname: '/write', params: { topic: PROMPTS[promptIdx] } })}>
           <SparkleIcon size={20} color={PAL.amberDeep} />
           <View style={{ flex: 1 }}>
             <Text style={styles.promptText}>{PROMPTS[promptIdx]}</Text>
@@ -305,7 +305,7 @@ export default function HomeScreen() {
                       const h = date.getHours();
                       const m = date.getMinutes();
                       const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                      await AsyncStorage.setItem('haru_notif_time', timeStr);
+                      await AsyncStorage.setItem('perpetual_notif_time', timeStr);
                       await scheduleDailyDiaryReminder(h, m);
                       setNotifTime(date);
                       setShowNotifPicker(false);
@@ -338,9 +338,9 @@ export default function HomeScreen() {
             onPress={async () => {
               await supabase.auth.signOut();
               await AsyncStorage.multiRemove([
-                'haru_onboarded',
-                'haru_notif_time',
-                'haru_weekly_notif_scheduled',
+                'perpetual_onboarded',
+                'perpetual_notif_time',
+                'perpetual_weekly_notif_scheduled',
               ]);
               await cancelDailyDiaryReminder();
               router.replace('/onboarding');

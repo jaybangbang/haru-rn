@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PAL } from '@/constants/palette';
+import { Toast } from '@/components/Toast';
 import { PERSONAS } from '@/lib/personas';
 import { ensureAuth } from '@/lib/auth';
 import {
@@ -15,49 +16,50 @@ import {
 } from '@/lib/notifications';
 
 const { width } = Dimensions.get('window');
-const ONBOARDING_KEY = 'haru_onboarded';
+const ONBOARDING_KEY = 'perpetual_onboarded';
 
 const NOTIF_OPTIONS = [
-  { label: '🌅 아침에',    desc: '어제를 돌아보거나 오늘을 시작하기 전에', hour: 7,  minute: 0 },
+  { label: '🌅 아침에',    desc: '출근 길에 어제를 돌아보며',              hour: 7,  minute: 0 },
   { label: '☀️ 점심에',    desc: '잠깐 숨 돌리는 틈에',                   hour: 12, minute: 0 },
   { label: '🌆 저녁에',    desc: '하루 일을 마치고 집에 오는 길에',         hour: 18, minute: 0 },
   { label: '🌙 자기 전에', desc: '하루를 되감으며 잠들기 전에',             hour: 22, minute: 0 },
 ];
 
-function makeDate(hour: number, minute: number): Date {
-  const d = new Date();
-  d.setHours(hour, minute, 0, 0);
-  return d;
-}
+const REPORT_ITEMS = ['핵심 사건', '반복 패턴', '미결 질문', '제언'];
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState(0); // 0: 친구 소개, 1: 알림 설정
+  const [step, setStep] = useState(0); // 0~4
   const [selectedOption, setSelectedOption] = useState<typeof NOTIF_OPTIONS[0] | null>(null);
   const [pickerDate, setPickerDate] = useState(new Date());
 
   const selectOption = (opt: typeof NOTIF_OPTIONS[0]) => {
     setSelectedOption(opt);
-    setPickerDate(makeDate(opt.hour, opt.minute));
+    const d = new Date();
+    d.setHours(opt.hour, opt.minute, 0, 0);
+    setPickerDate(d);
   };
 
   const goNext = async () => {
-    if (step === 0) {
-      setStep(1);
+    if (step < 4) {
+      setStep(s => s + 1);
       return;
     }
-    // 완료
-    if (selectedOption) {
-      const h = pickerDate.getHours();
-      const m = pickerDate.getMinutes();
-      const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      await AsyncStorage.setItem('haru_notif_time', timeStr);
-      const granted = await requestNotificationPermissions();
-      if (granted) await scheduleDailyDiaryReminder(h, m);
+    try {
+      if (selectedOption) {
+        const hour = pickerDate.getHours();
+        const minute = pickerDate.getMinutes();
+        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        await AsyncStorage.setItem('perpetual_notif_time', timeStr);
+        const granted = await requestNotificationPermissions();
+        if (granted) await scheduleDailyDiaryReminder(hour, minute);
+      }
+      await AsyncStorage.setItem(ONBOARDING_KEY, '1');
+      await ensureAuth();
+      router.replace('/(tabs)');
+    } catch {
+      Toast.show('오류가 발생했어요. 다시 시도해주세요.');
     }
-    await AsyncStorage.setItem(ONBOARDING_KEY, '1');
-    await ensureAuth();
-    router.replace('/(tabs)');
   };
 
   const skipNotif = async () => {
@@ -71,9 +73,44 @@ export default function OnboardingScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
 
-      {step === 0 ? (
-        /* ── 친구 소개 페이지 ── */
-        <View style={styles.introPage}>
+      {/* 뒤로가기 버튼 — Step 1~4에서 표시 */}
+      {step > 0 && (
+        <Pressable
+          style={[styles.backBtn, { top: insets.top + 8 }]}
+          onPress={() => setStep(s => s - 1)}
+          hitSlop={12}
+        >
+          <Text style={styles.backText}>‹</Text>
+        </Pressable>
+      )}
+
+      {/* ── Step 0: 훅 ── */}
+      {step === 0 && (
+        <View style={styles.page}>
+          <Text style={styles.headline}>
+            {'내 일기, 한 번 쓰고\n안 본다면?'}
+          </Text>
+          <Text style={styles.body}>
+            {'이제 AI 친구들과 함께 봐요'}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Step 1: 플랫폼 ── */}
+      {step === 1 && (
+        <View style={styles.page}>
+          <View style={styles.platformBadge}>
+            <Text style={styles.platformText}>{'📱 모바일앱으로도\n💻 PC 웹으로도'}</Text>
+          </View>
+          <Text style={styles.headline}>
+            {'언제 어디서나\n편하게 작성할 수 있어요'}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Step 2: AI 친구 소개 ── */}
+      {step === 2 && (
+        <View style={styles.page}>
           <View style={styles.avatarRow}>
             {personas.map(p => (
               <View key={p.key} style={styles.avatarWrap}>
@@ -84,17 +121,34 @@ export default function OnboardingScreen() {
               </View>
             ))}
           </View>
-          <Text style={styles.introHeadline}>
-            {'세 친구가\n매일 일기를 읽어줄 거예요'}
-          </Text>
-          <Text style={styles.introBody}>
-            일기를 쓰면 각자의 방식으로{'\n'}코멘트를 남겨줘요
+          <Text style={styles.headline}>
+            {'AI 친구가 일기를\n읽고 댓글을 달아줘요'}
           </Text>
         </View>
-      ) : (
-        /* ── 알림 설정 페이지 ── */
+      )}
+
+      {/* ── Step 3: 주간 리포트 ── */}
+      {step === 3 && (
+        <View style={styles.page}>
+          <View style={styles.reportCard}>
+            <Text style={styles.reportCardTitle}>AI 주간 리포트</Text>
+            {REPORT_ITEMS.map((item, i) => (
+              <View key={item} style={styles.reportCardRow}>
+                <Text style={styles.reportCardItem}>{item}</Text>
+                <View style={[styles.reportCardBar, { width: `${70 - i * 10}%` as any }]} />
+              </View>
+            ))}
+          </View>
+          <Text style={styles.headline}>
+            {'한 주 일기가 쌓이면\n분석 리포트가 도착해요'}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Step 4: 알림 설정 ── */}
+      {step === 4 && (
         <View style={styles.notifPage}>
-          <Text style={styles.notifHeadline}>
+          <Text style={styles.headline}>
             {'언제 일기 쓸 시간이\n날 것 같아요?'}
           </Text>
           <Text style={styles.notifSub}>알림을 보내드릴게요</Text>
@@ -117,15 +171,12 @@ export default function OnboardingScreen() {
                     </Text>
                   </View>
                   {isSelected && (
-                    <View style={styles.pickerRow}>
-                      <Text style={styles.pickerLabel}>알림 시각</Text>
+                    <View style={styles.pickerInner}>
                       <DateTimePicker
                         value={pickerDate}
                         mode="time"
                         display="compact"
                         onChange={(_, date) => { if (date) setPickerDate(date); }}
-                        style={styles.picker}
-                        themeVariant="light"
                       />
                     </View>
                   )}
@@ -133,25 +184,30 @@ export default function OnboardingScreen() {
               );
             })}
           </View>
+
         </View>
       )}
 
       {/* 하단 고정 */}
       <View style={styles.bottom}>
-        {/* Dots */}
         <View style={styles.dots}>
-          {[0, 1].map(i => (
+          {[0, 1, 2, 3, 4].map(i => (
             <View key={i} style={[styles.dot, step === i && styles.dotActive]} />
           ))}
         </View>
 
-        <Pressable style={styles.btn} onPress={goNext}>
+        <Pressable
+          style={[styles.btn, (step === 4 && !selectedOption) && styles.btnDisabled]}
+          onPress={step === 4 && !selectedOption
+            ? () => Toast.show('리마인드 받을 시간대를 선택하세요')
+            : goNext}
+        >
           <Text style={styles.btnText}>
-            {step === 0 ? '다음' : '시작하기'}
+            {step < 4 ? '다음' : '시작하기'}
           </Text>
         </Pressable>
 
-        {step === 1 && (
+        {step === 4 && (
           <Pressable onPress={skipNotif} style={styles.skipBtn}>
             <Text style={styles.skipText}>알림 없이 할게요</Text>
           </Pressable>
@@ -167,11 +223,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  /* 친구 소개 */
-  introPage: {
+  /* 공통 페이지 */
+  page: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 32, gap: 28,
+    paddingHorizontal: 32, gap: 24,
   },
+  headline: {
+    fontSize: 28, fontWeight: '400', color: PAL.ink,
+    fontFamily: 'NotoSerifKR-Regular',
+    textAlign: 'center', lineHeight: 42,
+  },
+  body: {
+    fontSize: 17, color: PAL.ink,
+    textAlign: 'center', lineHeight: 26, fontWeight: '500',
+  },
+
+  /* Step 1 — 플랫폼 */
+  platformBadge: {
+    backgroundColor: PAL.paper, borderRadius: 14,
+    padding: 20, borderWidth: 1, borderColor: PAL.lineSoft,
+    width: '100%', alignItems: 'center',
+  },
+  platformText: {
+    fontSize: 16, color: PAL.muted, textAlign: 'center', lineHeight: 28,
+  },
+
+  /* Step 2 — AI 친구 */
   avatarRow: {
     flexDirection: 'row', gap: 20, alignItems: 'flex-start',
   },
@@ -181,27 +258,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
   },
   nameText: { fontSize: 12, fontWeight: '600', letterSpacing: 0.3 },
-  introHeadline: {
-    fontSize: 28, fontWeight: '400', color: PAL.ink,
-    fontFamily: 'NotoSerifKR-Regular',
-    textAlign: 'center', lineHeight: 42,
-  },
-  introBody: {
-    fontSize: 15, color: PAL.muted,
-    textAlign: 'center', lineHeight: 24,
-  },
 
-  /* 알림 설정 */
+  /* Step 3 — 리포트 카드 */
+  reportCard: {
+    backgroundColor: PAL.paper, borderRadius: 16,
+    padding: 20, width: '100%', gap: 14,
+    borderWidth: 1, borderColor: PAL.lineSoft,
+  },
+  reportCardTitle: {
+    fontSize: 11, color: PAL.muted,
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4,
+  },
+  reportCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  reportCardItem: { fontSize: 13, color: PAL.ink, width: 72 },
+  reportCardBar: { height: 6, borderRadius: 3, backgroundColor: PAL.lineSoft },
+
+  /* Step 4 — 알림 설정 */
   notifPage: {
     flex: 1, paddingHorizontal: 24, paddingTop: 40,
   },
-  notifHeadline: {
-    fontSize: 28, fontWeight: '400', color: PAL.ink,
-    fontFamily: 'NotoSerifKR-Regular',
-    lineHeight: 42, marginBottom: 8,
-  },
   notifSub: {
-    fontSize: 14, color: PAL.muted, marginBottom: 28,
+    fontSize: 14, color: PAL.muted, marginBottom: 28, marginTop: 8,
+  },
+  pickerInner: {
+    marginTop: 10,
+    backgroundColor: PAL.paper,
+    borderRadius: 10,
+    overflow: 'hidden',
+    alignItems: 'flex-start',
+    paddingLeft: 4,
   },
   optionList: { gap: 10 },
   option: {
@@ -223,15 +308,6 @@ const styles = StyleSheet.create({
   optionLabelSelected: { color: '#F5DCB6' },
   optionDesc: { fontSize: 12, color: PAL.muted },
   optionDescSelected: { color: 'rgba(245,220,182,0.65)' },
-  pickerRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12, paddingTop: 12,
-    borderTopWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
-  },
-  pickerLabel: { fontSize: 13, color: 'rgba(245,220,182,0.8)' },
-  picker: { height: 36 },
-
   /* 하단 */
   bottom: { paddingHorizontal: 24, alignItems: 'center', gap: 0 },
   dots: { flexDirection: 'row', gap: 6, marginBottom: 20 },
@@ -246,6 +322,12 @@ const styles = StyleSheet.create({
     backgroundColor: PAL.indigoDeep,
   },
   btnText: { color: PAL.bg, fontSize: 16, fontWeight: '600' },
+  btnDisabled: { opacity: 0.4 },
   skipBtn: { marginTop: 14, padding: 8 },
   skipText: { fontSize: 14, color: PAL.muted },
+  backBtn: {
+    position: 'absolute', left: 20, zIndex: 10,
+    padding: 8,
+  },
+  backText: { fontSize: 32, color: PAL.muted, lineHeight: 36 },
 });

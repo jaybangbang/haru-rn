@@ -11,7 +11,7 @@ const withModularHeaders = (config) => {
         let podfile = fs.readFileSync(podfilePath, 'utf8');
         if (!podfile.includes('use_modular_headers!')) {
           podfile = podfile.replace(
-            /^(target 'app' do\n)/m,
+            /^(target '[^']+' do\n)/m,
             '$1  use_modular_headers!\n'
           );
           fs.writeFileSync(podfilePath, podfile);

@@ -10,13 +10,16 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ing.perpetual.app",
-      "buildNumber": "1",
+      "buildNumber": "34",
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "appleTeamId": "867RGMZD7Y"
     },
     "android": {
       "adaptiveIcon": {
@@ -44,7 +47,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.211797293864-6594apko9jt9dql1tk874k0li3lc5a93"
+          "iosUrlScheme": "com.googleusercontent.apps.785797626728-gl04q5erv10i18pbef9qtsp6coehkk8k"
         }
       ]
     ],

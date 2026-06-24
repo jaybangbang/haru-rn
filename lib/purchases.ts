@@ -1,4 +1,5 @@
 import Purchases, { LOG_LEVEL, CustomerInfo } from 'react-native-purchases';
+import { supabase } from './supabase';
 
 export const PRODUCT_IDS = {
   monthly: 'ing.perpetual.app.premium.monthly',
@@ -6,6 +7,11 @@ export const PRODUCT_IDS = {
 };
 
 const ENTITLEMENT_ID = 'premium';
+
+async function isPremiumOverride(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user.app_metadata?.is_premium === true;
+}
 
 export function initPurchases(): void {
   const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? '';
@@ -30,8 +36,13 @@ export async function restorePurchases(): Promise<boolean> {
 }
 
 export async function getActiveSubscription(): Promise<boolean> {
-  const customerInfo = await Purchases.getCustomerInfo();
-  return isActiveSubscriber(customerInfo);
+  if (await isPremiumOverride()) return true;
+  try {
+    const customerInfo = await Purchases.getCustomerInfo();
+    return isActiveSubscriber(customerInfo);
+  } catch {
+    return false;
+  }
 }
 
 function isActiveSubscriber(info: CustomerInfo): boolean {

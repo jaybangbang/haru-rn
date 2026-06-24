@@ -13,10 +13,10 @@ import { migrateAnonymousData } from '@/lib/auth';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  iosClientId: '211797293864-6594apko9jt9dql1tk874k0li3lc5a93.apps.googleusercontent.com',
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
 });
 
-const SOURCE_APP = 'haru';
+const SOURCE_APP = 'perpetual';
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
@@ -147,7 +147,7 @@ export default function AuthScreen() {
           />
 
           <Pressable style={[styles.socialBtn, { borderColor: PAL.line }]} onPress={signInWithGoogle}>
-            <Text style={styles.socialBtnText}>G  Google로 가입하고 결제하기</Text>
+            <Text style={styles.socialBtnText}>Google로 등록</Text>
           </Pressable>
 
           <View style={styles.divider}>
@@ -157,7 +157,7 @@ export default function AuthScreen() {
           </View>
 
           <Pressable style={styles.emailBtn} onPress={() => setMode('email')}>
-            <Text style={styles.emailBtnText}>이메일로 가입하고 결제하기</Text>
+            <Text style={styles.emailBtnText}>이메일로 등록</Text>
           </Pressable>
 
           <Text style={styles.pricingNote}>가입 후 구독 플랜을 선택하게 됩니다 · 월 ₩6,900~</Text>

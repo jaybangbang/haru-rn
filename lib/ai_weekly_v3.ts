@@ -16,11 +16,11 @@ async function callClaude(system: string, user: string, maxTokens = 300): Promis
   return data.text ?? '';
 }
 
-function buildDayEnergy(entries: DiaryEntry[]): { d: string; v: number }[] {
+function buildDayEnergy(entries: DiaryEntry[], referenceDate?: Date): { d: string; v: number }[] {
   const DOW = ['일', '월', '화', '수', '목', '금', '토'];
-  const today = new Date();
+  const ref = referenceDate ?? new Date();
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
+    const d = new Date(ref);
     d.setDate(d.getDate() - (6 - i));
     const dateStr = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
     const entry = entries.find(e => e.date === dateStr);
@@ -54,13 +54,19 @@ export async function generateWeeklySummaryV3(
 ): Promise<WeeklySummary> {
   const meta = buildWeekMeta(weekKey, entries);
 
+  // 주차 기준 날짜 계산 (과거 주 에너지 차트 정확도)
+  const [yearStr, weekStr] = weekKey.replace(/_.*$/, '').split('-');
+  const weekStart = getWeekStart(parseInt(yearStr, 10), parseInt(weekStr, 10));
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+
   if (entries.length === 0) {
     return {
       weekKey, ...meta,
       comment: '',
       keywords: [],
       suggestions: [],
-      days: buildDayEnergy(entries),
+      days: buildDayEnergy(entries, weekEnd),
       generatedAt: Date.now(),
       reportHeadline: '이번 주는 기록이 없어요',
       reportHeadlineBody: '일기를 쓰기 시작하면 분석이 가능해요.',
@@ -113,7 +119,7 @@ ${entriesText}
       comment: parsed.headline ?? '',
       keywords: parsed.keywords ?? [],
       suggestions: [],
-      days: buildDayEnergy(entries),
+      days: buildDayEnergy(entries, weekEnd),
       generatedAt: Date.now(),
       reportHeadline: parsed.headline ?? '',
       reportHeadlineBody: parsed.headlineBody ?? '',
@@ -128,7 +134,7 @@ ${entriesText}
       comment: '',
       keywords: [],
       suggestions: [],
-      days: buildDayEnergy(entries),
+      days: buildDayEnergy(entries, weekEnd),
       generatedAt: Date.now(),
       reportHeadline: '분석 중 오류가 발생했어요',
       reportHeadlineBody: '잠시 후 다시 시도해보세요.',

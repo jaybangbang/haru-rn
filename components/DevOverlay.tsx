@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { cancelDailyDiaryReminder } from '@/lib/notifications';
 import { PAL } from '@/constants/palette';
 
-const STORAGE_KEY = 'haru_qa_checked';
+const STORAGE_KEY = 'perpetual_qa_checked';
 
 const CHECKLIST = [
   { id: 'build',    label: '빌드 최신 여부 확인 (마운트 시각 체크)' },
@@ -59,9 +59,9 @@ export default function DevOverlay() {
   const resetToOnboarding = async () => {
     await supabase.auth.signOut();
     await AsyncStorage.multiRemove([
-      'haru_onboarded',
-      'haru_notif_time',
-      'haru_weekly_notif_scheduled',
+      'perpetual_onboarded',
+      'perpetual_notif_time',
+      'perpetual_weekly_notif_scheduled',
     ]);
     await cancelDailyDiaryReminder();
     setOpen(false);
