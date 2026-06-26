@@ -17,7 +17,7 @@ import { cancelDailyDiaryReminder, scheduleDailyDiaryReminder } from '@/lib/noti
 import EntryCard from '@/components/EntryCard';
 import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
 
-const PRIVACY_POLICY_URL = 'https://your-privacy-policy-url.com';
+const PRIVACY_POLICY_URL = 'https://haru-web-ten.vercel.app/privacy';
 
 const PROMPTS = [
   '🔥 오늘 가장 잘 풀린 일은 무엇이었나요?',
