@@ -56,8 +56,11 @@
 
 > 현재 구독 없이 출시. 나중에 `lib/purchases.ts`의 `MONETIZATION_ENABLED = true`로 전환.
 
-- [ ] `MONETIZATION_ENABLED = true` 플래그 활성화
-- [ ] paywall.tsx 진입점 복원 (프리미엄 배너, 프로필 버튼 라우팅)
+- [ ] `lib/purchases.ts` `MONETIZATION_ENABLED = true`로 변경 (1줄)
+- [ ] `app/auth.tsx` pricingNote 문구 복원 ("가입 후 구독 플랜을 선택하게 됩니다 · 월 ₩6,900~")
+- [ ] `app/(tabs)/weekly.tsx` 배너를 `isAnonymous &&` 조건부 Pressable로 복원 (`router.push('/auth')`)
+- [ ] `app/(tabs)/index.tsx` 웹 CTA "열기" 버튼 복원 (`Linking.openURL('https://haru-web-ten.vercel.app')`)
+- [ ] `app/paywall.tsx` 동작 재확인 (handleClose signOut + Toast)
 - [ ] 기존 유저 grandfather 정책 결정 (가입일 기준 무료 유지 여부)
 - [ ] 이용약관 페이지 추가 (구독 갱신/해지 정책 명시 — Apple 요구사항)
-- [ ] Sandbox 결제 테스트
+- [ ] Sandbox Apple ID 결제 테스트

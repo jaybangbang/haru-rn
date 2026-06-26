@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PAL } from '@/constants/palette';
 import { supabase } from '@/lib/supabase';
 import { migrateAnonymousData } from '@/lib/auth';
+import { MONETIZATION_ENABLED } from '@/lib/purchases';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -25,12 +26,17 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const finish = (oldId: string | null) => {
+  const finish = async (oldId: string | null) => {
+    if (!MONETIZATION_ENABLED) {
+      if (oldId) {
+        try { await migrateAnonymousData(oldId); } catch {}
+      }
+      router.replace('/(tabs)');
+      return;
+    }
     if (oldId) {
-      // 신규 가입: 결제 화면으로 (데이터 이전은 결제 후)
       router.replace({ pathname: '/paywall' as any, params: { oldId } });
     } else {
-      // 기존 계정 재로그인: 바로 홈
       router.replace('/(tabs)');
     }
   };
@@ -53,7 +59,7 @@ export default function AuthScreen() {
       });
       if (error) throw error;
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      finish(oldId);
+      await finish(oldId);
     } catch (e: any) {
       if (e.code !== 'ERR_REQUEST_CANCELED') Alert.alert('오류', e.message);
     } finally {
@@ -75,7 +81,7 @@ export default function AuthScreen() {
       });
       if (error) throw error;
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      finish(oldId);
+      await finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -97,7 +103,7 @@ export default function AuthScreen() {
       });
       if (error) throw error;
       Alert.alert('확인 이메일을 보냈어요', '이메일을 확인하고 인증을 완료해주세요.');
-      finish(oldId);
+      await finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -116,7 +122,7 @@ export default function AuthScreen() {
         email: email.trim(), password,
       });
       if (error) throw error;
-      finish(oldId);
+      await finish(oldId);
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -160,7 +166,6 @@ export default function AuthScreen() {
             <Text style={styles.emailBtnText}>이메일로 등록</Text>
           </Pressable>
 
-          <Text style={styles.pricingNote}>가입 후 구독 플랜을 선택하게 됩니다 · 월 ₩6,900~</Text>
         </View>
       ) : (
         <View style={styles.btnGroup}>

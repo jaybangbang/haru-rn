@@ -1,6 +1,8 @@
 import Purchases, { LOG_LEVEL, CustomerInfo } from 'react-native-purchases';
 import { supabase } from './supabase';
 
+export const MONETIZATION_ENABLED = false;
+
 export const PRODUCT_IDS = {
   monthly: 'ing.perpetual.app.premium.monthly',
   yearly: 'ing.perpetual.app.premium.yearly',
@@ -36,6 +38,7 @@ export async function restorePurchases(): Promise<boolean> {
 }
 
 export async function getActiveSubscription(): Promise<boolean> {
+  if (!MONETIZATION_ENABLED) return true;
   if (await isPremiumOverride()) return true;
   try {
     const customerInfo = await Purchases.getCustomerInfo();

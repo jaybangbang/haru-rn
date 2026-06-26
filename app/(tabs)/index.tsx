@@ -13,6 +13,8 @@ import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, formatDate, getLastReadAt, setLastReadAt } from '@/lib/storage';
 import { deleteAccount } from '@/lib/auth';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { cancelDailyDiaryReminder, scheduleDailyDiaryReminder } from '@/lib/notifications';
 import EntryCard from '@/components/EntryCard';
 import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
@@ -73,6 +75,7 @@ export default function HomeScreen() {
   const [notifTime, setNotifTime] = useState<Date | null>(null);
   const [pendingNotifTime, setPendingNotifTime] = useState<Date | null>(null);
   const [showNotifPicker, setShowNotifPicker] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const todayStr = formatDate(new Date());
   const selectedStr = formatDate(selectedDate);
@@ -123,6 +126,65 @@ export default function HomeScreen() {
     await loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const all = await loadEntries();
+      if (all.length === 0) {
+        Alert.alert('내보낼 일기가 없어요');
+        return;
+      }
+      const sorted = [...all].sort((a, b) => a.date.localeCompare(b.date));
+      const lines: string[] = [
+        '# Perpetual 일기 내보내기\n',
+        `내보낸 날짜: ${new Date().toLocaleDateString('ko-KR')}  총 ${sorted.length}개\n`,
+        '---\n',
+      ];
+      for (const entry of sorted) {
+        lines.push(`\n## ${entry.date} ${entry.dateObj.dow}요일\n`);
+        lines.push(`${entry.body}\n`);
+        if (entry.emotions.length > 0) {
+          lines.push(`\n**감정:** ${entry.emotions.map(e => `${e.emoji} ${e.label}`).join(' · ')}`);
+        }
+        if (entry.energyScore != null) {
+          lines.push(`  **에너지:** ${entry.energyScore}/10`);
+        }
+        const comments = entry.comments ?? [];
+        if (comments.length > 0) {
+          lines.push('\n\n---\n\n### 💬 댓글\n');
+          for (const c of comments) {
+            if (c.isUser) {
+              lines.push(`\n> **나**  \n> ${c.text}\n`);
+            } else {
+              const nameKo = PERSONA_META[c.persona as PersonaKey]?.nameKo ?? c.persona;
+              lines.push(`\n**${nameKo}**  \n${c.text}\n`);
+            }
+          }
+        }
+        lines.push('\n---\n');
+      }
+      const today = new Date();
+      const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      const filePath = `${FileSystem.documentDirectory}perpetual_diary_${ymd}.md`;
+      await FileSystem.writeAsStringAsync(filePath, lines.join('\n'), {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('공유를 지원하지 않는 기기예요');
+        return;
+      }
+      await Sharing.shareAsync(filePath, {
+        mimeType: 'text/markdown',
+        dialogTitle: '일기 내보내기',
+        UTI: 'net.daringfireball.markdown',
+      });
+    } catch {
+      Alert.alert('오류', '내보내기 중 문제가 발생했어요.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const openNotifs = async () => {
     setShowNotifs(true);
@@ -329,6 +391,17 @@ export default function HomeScreen() {
                 <Text style={styles.settingsRowValue}>›</Text>
               </Pressable>
 
+              {/* 내 일기 내보내기 */}
+              <Pressable
+                style={[styles.settingsRow, isExporting && { opacity: 0.5 }]}
+                onPress={handleExport}
+                disabled={isExporting}
+              >
+                <Text style={styles.settingsRowIcon}>📥</Text>
+                <Text style={styles.settingsRowLabel}>내 일기 내보내기</Text>
+                <Text style={styles.settingsRowValue}>{isExporting ? '처리중…' : 'MD'}</Text>
+              </Pressable>
+
               {/* Web CTA */}
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsRowIcon}>💻</Text>
@@ -336,12 +409,9 @@ export default function HomeScreen() {
                   <Text style={styles.settingsRowLabel}>웹에서도 작성할 수 있어요</Text>
                   <Text style={styles.settingsRowSub}>입력할 게 많을 땐 PC로 작성해보세요</Text>
                 </View>
-                <Pressable
-                  style={styles.settingsRowBtn}
-                  onPress={() => Linking.openURL('https://haru-web-ten.vercel.app')}
-                >
-                  <Text style={styles.settingsRowBtnText}>열기</Text>
-                </Pressable>
+                <View style={styles.comingSoonBadge}>
+                  <Text style={styles.comingSoonBadgeText}>준비중</Text>
+                </View>
               </View>
 
               {/* AI 고지 */}
@@ -564,6 +634,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteAccountBtnText: { fontSize: 13, color: PAL.faint },
+  comingSoonBadge: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: PAL.lineSoft,
+    borderRadius: 999,
+    borderWidth: 1, borderColor: PAL.line,
+  },
+  comingSoonBadgeText: { fontSize: 11, color: PAL.muted, fontWeight: '600' },
   promptBanner: {
     marginTop: 22, marginHorizontal: 20,
     paddingVertical: 14, paddingHorizontal: 16,

@@ -390,17 +390,17 @@ export default function WeeklyScreen() {
         </>
       )}
 
-      {/* 프리미엄 배너 — 익명 유저에게만 표시 */}
-      {isAnonymous && (
-        <Pressable style={styles.premiumBanner} onPress={() => router.push('/auth')}>
-          <Text style={styles.premiumBannerIcon}>☁️</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.premiumBannerText}>일기를 안전하게 백업하고 싶다면</Text>
-            <Text style={styles.premiumBannerSub}>프리미엄으로 클라우드 + 웹 작성</Text>
-          </View>
-          <Text style={styles.premiumBannerArrow}>›</Text>
-        </Pressable>
-      )}
+      {/* 클라우드 백업 예고 배너 */}
+      <View style={styles.premiumBanner}>
+        <Text style={styles.premiumBannerIcon}>☁️</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.premiumBannerText}>클라우드 백업 & 웹 작성</Text>
+          <Text style={styles.premiumBannerSub}>곧 열려요 — 지금은 기기에 안전하게 저장돼요</Text>
+        </View>
+        <View style={styles.comingSoonBadge}>
+          <Text style={styles.comingSoonBadgeText}>준비중</Text>
+        </View>
+      </View>
 
     </ScrollView>
   );
@@ -916,4 +916,11 @@ const styles = StyleSheet.create({
   premiumBannerText: { fontSize: 14, fontWeight: '600', color: PAL.ink },
   premiumBannerSub: { fontSize: 12, color: PAL.muted, marginTop: 3 },
   premiumBannerArrow: { fontSize: 22, color: PAL.amberDeep, fontWeight: '300' },
+  comingSoonBadge: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: PAL.lineSoft,
+    borderRadius: 999,
+    borderWidth: 1, borderColor: PAL.line,
+  },
+  comingSoonBadgeText: { fontSize: 11, color: PAL.muted, fontWeight: '600' },
 });
