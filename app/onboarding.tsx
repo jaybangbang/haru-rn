@@ -32,12 +32,16 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0); // 0~4
   const [selectedOption, setSelectedOption] = useState<typeof NOTIF_OPTIONS[0] | null>(null);
   const [pickerDate, setPickerDate] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(false);
+  const [pendingPickerDate, setPendingPickerDate] = useState(new Date());
 
   const selectOption = (opt: typeof NOTIF_OPTIONS[0]) => {
     setSelectedOption(opt);
     const d = new Date();
     d.setHours(opt.hour, opt.minute, 0, 0);
     setPickerDate(d);
+    setPendingPickerDate(d);
+    setShowPicker(true);
   };
 
   const goNext = async () => {
@@ -170,20 +174,32 @@ export default function OnboardingScreen() {
                       {opt.desc}
                     </Text>
                   </View>
-                  {isSelected && (
-                    <View style={styles.pickerInner}>
-                      <DateTimePicker
-                        value={pickerDate}
-                        mode="time"
-                        display="compact"
-                        onChange={(_, date) => { if (date) setPickerDate(date); }}
-                      />
-                    </View>
-                  )}
                 </Pressable>
               );
             })}
           </View>
+
+          {showPicker && (
+            <View style={styles.pickerSection}>
+              <DateTimePicker
+                value={pendingPickerDate}
+                mode="time"
+                display="spinner"
+                locale="ko-KR"
+                style={{ backgroundColor: PAL.bg }}
+                onChange={(_, date) => { if (date) setPendingPickerDate(date); }}
+              />
+              <Pressable
+                style={styles.pickerConfirmBtn}
+                onPress={() => {
+                  setPickerDate(pendingPickerDate);
+                  setShowPicker(false);
+                }}
+              >
+                <Text style={styles.pickerConfirmBtnText}>확인</Text>
+              </Pressable>
+            </View>
+          )}
 
         </View>
       )}
@@ -280,14 +296,14 @@ const styles = StyleSheet.create({
   notifSub: {
     fontSize: 14, color: PAL.muted, marginBottom: 28, marginTop: 8,
   },
-  pickerInner: {
-    marginTop: 10,
-    backgroundColor: PAL.paper,
-    borderRadius: 10,
-    overflow: 'hidden',
-    alignItems: 'flex-start',
-    paddingLeft: 4,
+  pickerSection: {
+    marginTop: 16,
   },
+  pickerConfirmBtn: {
+    marginHorizontal: 4, marginBottom: 4, paddingVertical: 12,
+    backgroundColor: PAL.indigoDeep, borderRadius: 12, alignItems: 'center',
+  },
+  pickerConfirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   optionList: { gap: 10 },
   option: {
     paddingVertical: 14, paddingHorizontal: 18,
