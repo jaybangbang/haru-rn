@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ing.perpetual.app",
-      "buildNumber": "34",
+      "buildNumber": "35",
       "entitlements": {
         "com.apple.developer.applesignin": [
           "Default"
@@ -49,7 +49,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.785797626728-gl04q5erv10i18pbef9qtsp6coehkk8k"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
