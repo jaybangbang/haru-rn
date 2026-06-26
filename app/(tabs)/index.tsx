@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
-  Modal, FlatList, SafeAreaView, Linking,
+  Modal, FlatList, SafeAreaView, Linking, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -12,9 +12,12 @@ import { router, useFocusEffect } from 'expo-router';
 import { PAL } from '@/constants/palette';
 import { AIComment, DiaryEntry, PersonaKey } from '@/lib/types';
 import { loadEntries, formatDate, getLastReadAt, setLastReadAt } from '@/lib/storage';
+import { deleteAccount } from '@/lib/auth';
 import { cancelDailyDiaryReminder, scheduleDailyDiaryReminder } from '@/lib/notifications';
 import EntryCard from '@/components/EntryCard';
 import { SparkleIcon, PenIcon, ArrowRightIcon, BellIcon, MagnifyIcon, BoltIcon, CompassIcon, PersonIcon } from '@/components/Icons';
+
+const PRIVACY_POLICY_URL = 'https://your-privacy-policy-url.com';
 
 const PROMPTS = [
   '🔥 오늘 가장 잘 풀린 일은 무엇이었나요?',
@@ -316,6 +319,16 @@ export default function HomeScreen() {
                 </View>
               )}
 
+              {/* 개인정보처리방침 */}
+              <Pressable
+                style={styles.settingsRow}
+                onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+              >
+                <Text style={styles.settingsRowIcon}>🔒</Text>
+                <Text style={styles.settingsRowLabel}>개인정보처리방침</Text>
+                <Text style={styles.settingsRowValue}>›</Text>
+              </Pressable>
+
               {/* Web CTA */}
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsRowIcon}>💻</Text>
@@ -329,6 +342,13 @@ export default function HomeScreen() {
                 >
                   <Text style={styles.settingsRowBtnText}>열기</Text>
                 </Pressable>
+              </View>
+
+              {/* AI 고지 */}
+              <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+                <Text style={{ fontSize: 11.5, color: PAL.faint, lineHeight: 17 }}>
+                  AI 댓글은 Anthropic Claude가 생성합니다.
+                </Text>
               </View>
             </View>
           </ScrollView>
@@ -347,6 +367,38 @@ export default function HomeScreen() {
             }}
           >
             <Text style={styles.logoutBtnText}>로그아웃</Text>
+          </Pressable>
+          <Pressable
+            style={styles.deleteAccountBtn}
+            onPress={() => {
+              Alert.alert(
+                '계정 탈퇴',
+                '탈퇴하면 모든 일기와 데이터가 영구 삭제됩니다. 되돌릴 수 없습니다.',
+                [
+                  { text: '취소', style: 'cancel' },
+                  {
+                    text: '탈퇴',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await deleteAccount();
+                        await AsyncStorage.multiRemove([
+                          'perpetual_onboarded',
+                          'perpetual_notif_time',
+                          'perpetual_weekly_notif_scheduled',
+                        ]);
+                        await cancelDailyDiaryReminder();
+                        router.replace('/onboarding');
+                      } catch {
+                        Alert.alert('오류', '탈퇴 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={styles.deleteAccountBtnText}>계정 탈퇴</Text>
           </Pressable>
         </SafeAreaView>
       </Modal>
@@ -506,6 +558,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutBtnText: { fontSize: 15, color: PAL.red, fontWeight: '500' },
+  deleteAccountBtn: {
+    marginHorizontal: 20, marginTop: 8, marginBottom: 16,
+    padding: 14, borderRadius: 14,
+    alignItems: 'center',
+  },
+  deleteAccountBtnText: { fontSize: 13, color: PAL.faint },
   promptBanner: {
     marginTop: 22, marginHorizontal: 20,
     paddingVertical: 14, paddingHorizontal: 16,

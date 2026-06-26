@@ -16,6 +16,12 @@ export async function ensureAuth(): Promise<string> {
   return user.id;
 }
 
+export async function deleteAccount(): Promise<void> {
+  const { error } = await supabase.rpc('delete_user_account');
+  if (error) throw error;
+  await supabase.auth.signOut();
+}
+
 export async function migrateAnonymousData(oldUserId: string): Promise<void> {
   const { data: { user: newUser } } = await supabase.auth.getUser();
   if (!newUser || newUser.id === oldUserId) return;
