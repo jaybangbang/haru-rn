@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ing.perpetual.app",
-      "buildNumber": "35",
+      "buildNumber": "36",
       "entitlements": {
         "com.apple.developer.applesignin": [
           "Default"
