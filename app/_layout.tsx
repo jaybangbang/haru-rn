@@ -16,6 +16,7 @@ import {
   NotoSansKR_600SemiBold,
 } from '@expo-google-fonts/noto-sans-kr';
 import { configureNotifications, requestNotificationPermissions, restoreDailyDiaryReminder } from '@/lib/notifications';
+import { retryPendingClaim } from '@/lib/auth';
 import { loadEntries, formatDate } from '@/lib/storage';
 import { ToastHost } from '@/components/Toast';
 import { initPurchases } from '@/lib/purchases';
@@ -39,6 +40,7 @@ export default function RootLayout() {
       await SplashScreen.hideAsync();
       requestNotificationPermissions();
       restoreDailyDiaryReminder();
+      retryPendingClaim(); // 실패한 마이그레이션 재시도 (비동기, 앱 시작 블로킹 안 함)
       const onboarded = await AsyncStorage.getItem('perpetual_onboarded');
       if (!onboarded) router.replace('/onboarding');
     })();

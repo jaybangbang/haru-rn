@@ -8,9 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PurchasesPackage } from 'react-native-purchases';
 import { PAL } from '@/constants/palette';
 import { Toast } from '@/components/Toast';
-import { supabase } from '@/lib/supabase';
 import { getOfferings, purchasePackage, restorePurchases, getActiveSubscription } from '@/lib/purchases';
-import { migrateAnonymousData } from '@/lib/auth';
+import { migrateAnonymousData, signOutAndReset } from '@/lib/auth';
 
 const { width } = Dimensions.get('window');
 
@@ -105,8 +104,7 @@ export default function PaywallScreen() {
   };
 
   const handleClose = async () => {
-    // 결제 없이 닫기 — Supabase 계정은 생성됐으므로 다시 익명으로
-    if (oldId) await supabase.auth.signOut();
+    if (oldId) await signOutAndReset();
     router.replace('/(tabs)');
     Toast.show('구독 시 클라우드 백업이 활성화돼요');
   };

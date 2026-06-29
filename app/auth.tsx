@@ -9,7 +9,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PAL } from '@/constants/palette';
 import { supabase } from '@/lib/supabase';
-import { migrateAnonymousData } from '@/lib/auth';
+import { claimAnonymousData, queuePendingClaim, signOutAndReset } from '@/lib/auth';
 import { MONETIZATION_ENABLED } from '@/lib/purchases';
 
 GoogleSignin.configure({
@@ -26,40 +26,55 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const finish = async (oldId: string | null) => {
-    if (!MONETIZATION_ENABLED) {
-      if (oldId) {
-        try { await migrateAnonymousData(oldId); } catch {}
+  // 기존 실계정 충돌 시 fallback: signInWithIdToken으로 전환 후 익명 데이터 흡수
+  const handleExistingAccount = async (
+    provider: 'apple' | 'google',
+    idToken: string,
+  ) => {
+    const { data: { user: anon } } = await supabase.auth.getUser();
+    const orphanId = anon?.is_anonymous ? anon.id : null;
+
+    const { error } = await supabase.auth.signInWithIdToken({ provider, token: idToken });
+    if (error) throw error;
+    await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
+
+    if (orphanId) {
+      try {
+        await claimAnonymousData(orphanId);
+      } catch {
+        await queuePendingClaim(orphanId); // 실패 시 다음 앱 시작에 재시도
       }
-      router.replace('/(tabs)');
-      return;
     }
-    if (oldId) {
-      router.replace({ pathname: '/paywall' as any, params: { oldId } });
-    } else {
-      router.replace('/(tabs)');
-    }
+    router.replace('/(tabs)');
   };
 
   const signInWithApple = async () => {
     try {
       setLoading(true);
-      const { data: { user: before } } = await supabase.auth.getUser();
-      const oldId = before?.is_anonymous ? before.id : null;
-
       const cred = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      const { error } = await supabase.auth.signInWithIdToken({
+      const idToken = cred.identityToken!;
+
+      // Path A: 현재 익명 세션에 Apple identity 연결 (user_id 불변)
+      const { error } = await supabase.auth.linkIdentity({
         provider: 'apple',
-        token: cred.identityToken!,
-      });
-      if (error) throw error;
+        token: idToken,
+      } as any);
+
+      if (error) {
+        // Path C: 이미 이 Apple 계정으로 가입한 기존 유저 → 세션 전환 + 데이터 흡수
+        if (/already linked|identity_already_exists/i.test(error.message)) {
+          await handleExistingAccount('apple', idToken);
+          return;
+        }
+        throw error;
+      }
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      await finish(oldId);
+      router.replace('/(tabs)');
     } catch (e: any) {
       if (e.code !== 'ERR_REQUEST_CANCELED') Alert.alert('오류', e.message);
     } finally {
@@ -70,18 +85,26 @@ export default function AuthScreen() {
   const signInWithGoogle = async () => {
     try {
       setLoading(true);
-      const { data: { user: before } } = await supabase.auth.getUser();
-      const oldId = before?.is_anonymous ? before.id : null;
-
       await GoogleSignin.hasPlayServices();
       const { data } = await GoogleSignin.signIn();
-      const { error } = await supabase.auth.signInWithIdToken({
+      const idToken = data!.idToken!;
+
+      // Path A: 현재 익명 세션에 Google identity 연결 (user_id 불변)
+      const { error } = await supabase.auth.linkIdentity({
         provider: 'google',
-        token: data!.idToken!,
-      });
-      if (error) throw error;
+        token: idToken,
+      } as any);
+
+      if (error) {
+        // Path C: 기존 계정 충돌
+        if (/already linked|identity_already_exists/i.test(error.message)) {
+          await handleExistingAccount('google', idToken);
+          return;
+        }
+        throw error;
+      }
       await supabase.auth.updateUser({ data: { source_app: SOURCE_APP } });
-      await finish(oldId);
+      router.replace('/(tabs)');
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -93,17 +116,15 @@ export default function AuthScreen() {
     if (!email.trim() || !password.trim()) return;
     try {
       setLoading(true);
-      const { data: { user: before } } = await supabase.auth.getUser();
-      const oldId = before?.is_anonymous ? before.id : null;
-
-      const { error } = await supabase.auth.signUp({
+      // Path B: 익명 세션에 이메일 연결 (user_id 불변, signUp 아님)
+      const { error } = await supabase.auth.updateUser({
         email: email.trim(),
-        password,
-        options: { data: { source_app: SOURCE_APP } },
+        data: { source_app: SOURCE_APP },
       });
       if (error) throw error;
-      Alert.alert('확인 이메일을 보냈어요', '이메일을 확인하고 인증을 완료해주세요.');
-      await finish(oldId);
+      // 비밀번호는 이메일 인증 완료 후 설정 — 현재 Supabase는 인증 전 비밀번호 설정 미지원
+      Alert.alert('확인 이메일을 보냈어요', '이메일 인증 후 이메일로 로그인할 수 있어요.');
+      router.replace('/(tabs)');
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
@@ -116,13 +137,22 @@ export default function AuthScreen() {
     try {
       setLoading(true);
       const { data: { user: before } } = await supabase.auth.getUser();
-      const oldId = before?.is_anonymous ? before.id : null;
+      const orphanId = before?.is_anonymous ? before.id : null;
 
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(), password,
       });
       if (error) throw error;
-      await finish(oldId);
+
+      // 기존 계정 로그인 시 익명 데이터 흡수 (Path C)
+      if (orphanId) {
+        try {
+          await claimAnonymousData(orphanId);
+        } catch {
+          await queuePendingClaim(orphanId);
+        }
+      }
+      router.replace('/(tabs)');
     } catch (e: any) {
       Alert.alert('오류', e.message);
     } finally {
