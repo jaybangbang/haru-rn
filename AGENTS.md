@@ -24,8 +24,20 @@ AI 일기 앱 "Perpetual". 사용자가 일기를 쓰면 3명의 AI 페르소나
 
 1. `lib/auth.ts` — `ensureAuth()`: 세션 없으면 자동 익명 로그인 → userId 반환
 2. 일기 작성 첫 완료 시 전체화면 회원가입 유도 모달 (`write.tsx`)
-3. `app/auth.tsx` — Apple/Google/이메일 로그인. 가입 후 `migrate_user_data` RPC로 익명 데이터 이전
+3. `app/auth.tsx` — Apple/Google/이메일 로그인
 4. 홈 탭 우상단: 익명=PersonIcon(→auth), 로그인=이니셜(→계정 모달+로그아웃)
+
+## 익명→실계정 마이그레이션 전략 (2026-06-29 변경)
+
+**핵심: user_id가 바뀌지 않으면 마이그레이션 불필요**
+
+- **Path A (신규 Apple/Google):** `linkIdentity` — 현재 익명 세션에 identity 연결, user_id 불변
+- **Path B (이메일 신규):** `updateUser({ email })` — 익명 세션에 이메일 연결, user_id 불변
+- **Path C (기존 계정 충돌):** `linkIdentity` "already linked" → `signInWithIdToken` fallback → `claim_anonymous_data` RPC + AsyncStorage 재시도 큐
+
+**Supabase 설정:** Auth → Sign In/Providers → Manual Linking 활성화 필수  
+**RPC:** `public.claim_anonymous_data(old_user_id uuid)` — new_user_id는 서버에서 auth.uid() 도출  
+**상세:** `docs/auth-migration-strategy.md`
 
 # 주간 요약 구조 백업
 
@@ -138,14 +150,15 @@ npx expo start --ios --port 8082
 
 ## 앱 심사 제출 (최우선 다음 작업)
 
-**현황 (2026-06-25):** RevenueCat `appl_` 키 교체 완료, ASC 구독 상품 2개 등록 완료, 빌드 #34 TestFlight 업로드 완료.
+**현황 (2026-06-29):** 빌드 #36 EAS 제출 완료, Apple 처리 중(TestFlight 미확인).
 offerings null 원인: ASC 첫 구독상품은 앱 바이너리 심사 제출 1회 해야 sandbox에서도 StoreKit 인식.
 
 **해야 할 것:**
-1. ASC에서 앱 버전에 구독 상품 연결
-2. 스크린샷 (6.5" + 5.5") 준비
-3. 한국어 앱 설명 + 키워드 작성
-4. 심사 제출 → 통과 후 Sandbox Apple ID로 결제 테스트
+1. TestFlight #36 설치 후 인증 흐름 테스트 (Apple/Google/이메일 로그인 + 일기 데이터 유지)
+2. ASC에서 앱 버전에 구독 상품 연결
+3. 스크린샷 (6.7인치 iPhone 16 Pro Max 필수) 준비
+4. 한국어 앱 설명 + 키워드 작성
+5. 심사 제출 → 통과 후 Sandbox Apple ID로 결제 테스트
 
 ## RevenueCat 설정 (2026-06-24 완료)
 
