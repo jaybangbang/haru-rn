@@ -161,45 +161,45 @@ export default function OnboardingScreen() {
             {NOTIF_OPTIONS.map(opt => {
               const isSelected = selectedOption?.label === opt.label;
               return (
-                <Pressable
-                  key={opt.label}
-                  style={[styles.option, isSelected && styles.optionSelected]}
-                  onPress={() => selectOption(opt)}
-                >
-                  <View style={styles.optionTop}>
-                    <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
-                      {opt.label}
-                    </Text>
-                    <Text style={[styles.optionDesc, isSelected && styles.optionDescSelected]}>
-                      {opt.desc}
-                    </Text>
-                  </View>
-                </Pressable>
+                <View key={opt.label}>
+                  <Pressable
+                    style={[styles.option, isSelected && styles.optionSelected]}
+                    onPress={() => selectOption(opt)}
+                  >
+                    <View style={styles.optionTop}>
+                      <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={[styles.optionDesc, isSelected && styles.optionDescSelected]}>
+                        {opt.desc}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  {isSelected && showPicker && (
+                    <View style={styles.pickerSection}>
+                      <DateTimePicker
+                        value={pendingPickerDate}
+                        mode="time"
+                        display="spinner"
+                        locale="ko-KR"
+                        style={{ backgroundColor: PAL.bg }}
+                        onChange={(_, date) => { if (date) setPendingPickerDate(date); }}
+                      />
+                      <Pressable
+                        style={styles.pickerConfirmBtn}
+                        onPress={() => {
+                          setPickerDate(pendingPickerDate);
+                          setShowPicker(false);
+                        }}
+                      >
+                        <Text style={styles.pickerConfirmBtnText}>확인</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
               );
             })}
           </View>
-
-          {showPicker && (
-            <View style={styles.pickerSection}>
-              <DateTimePicker
-                value={pendingPickerDate}
-                mode="time"
-                display="spinner"
-                locale="ko-KR"
-                style={{ backgroundColor: PAL.bg }}
-                onChange={(_, date) => { if (date) setPendingPickerDate(date); }}
-              />
-              <Pressable
-                style={styles.pickerConfirmBtn}
-                onPress={() => {
-                  setPickerDate(pendingPickerDate);
-                  setShowPicker(false);
-                }}
-              >
-                <Text style={styles.pickerConfirmBtnText}>확인</Text>
-              </Pressable>
-            </View>
-          )}
 
         </View>
       )}
@@ -297,7 +297,11 @@ const styles = StyleSheet.create({
     fontSize: 14, color: PAL.muted, marginBottom: 28, marginTop: 8,
   },
   pickerSection: {
-    marginTop: 16,
+    backgroundColor: PAL.paper,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
   },
   pickerConfirmBtn: {
     marginHorizontal: 4, marginBottom: 4, paddingVertical: 12,
@@ -314,6 +318,8 @@ const styles = StyleSheet.create({
   optionSelected: {
     backgroundColor: PAL.indigoDeep,
     borderColor: PAL.indigoDeep,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   optionTop: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
